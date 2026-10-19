@@ -1,0 +1,42 @@
+{
+  "repository": "https://github.com/gregkh/linux",
+  "commit": "a2de78ee6ed8bf8cd99d177c74865a6e8c3cb6ea",
+  "files": [
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec-bitwriter.h",
+      "sha256_lf": "6c112ecf5fce2c1ed83a4dd54bbdc2d03a741524f1c91bf337cd7ab06b0f9c31"
+    },
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec-hevc-common.c",
+      "sha256_lf": "c9ab0690fd04d05541e952f8ceaf628cb28d01082467b3c4e7d189413cdf3430"
+    },
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec-hevc-common.h",
+      "sha256_lf": "57df59b1c31790dce79ae29b1e3ab1893ba216930bada129defc3913fb44298c"
+    },
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec-rcb.c",
+      "sha256_lf": "92812145bb7fccea76112a132ffb3182409d44836c89a05f15d39e5afb9539d4"
+    },
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec-rcb.h",
+      "sha256_lf": "5a7bf008d0062f6cac7c5e05ab041bbb304e4b0b72c01a4250162480c2ba0b85"
+    },
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec-vdpu381-hevc.c",
+      "sha256_lf": "b88ceec36f6d77dac78732410f853047d647a82bd68d40f1822a421bc589561f"
+    },
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec-vdpu383-hevc.c",
+      "sha256_lf": "e0cbd76baff0124cd872bd9e81cf26c46458e08fa9dc1036f40f3412e3797763"
+    },
+    {
+      "path": "drivers/media/platform/rockchip/rkvdec/rkvdec.c",
+      "sha256_lf": "3053a732e4a0bbaedfb76c6ffb83ebef993ad1edfa25512bb72c12288d1b17be"
+    },
+    {
+      "path": "include/uapi/linux/v4l2-controls.h",
+      "sha256_lf": "8d97a2f9eb00414890308e26e2941174dfa8a7865fcfbb3ec472fb67081c372a"
+    }
+  ]
+}

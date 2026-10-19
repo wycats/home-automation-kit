@@ -1,0 +1,60 @@
+name: RK3568 kernel compile laboratory
+on:
+  pull_request:
+    paths:
+      - 'experiments/rk3568-kernel/**'
+      - '.github/workflows/kernel-compile.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rk3568-kernel-lab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Resource preflight
+        run: |
+          df -h "$RUNNER_TEMP"
+          free -h
+          # Conservative estimate, not measured. Never delete preinstalled tools.
+          available=$(df -Pk "$RUNNER_TEMP" | awk 'NR==2 {print $4}')
+          test "$available" -ge 20971520 || { echo 'Need 20 GiB free for this first full build; select another approved runner.'; exit 2; }
+      - name: Install build dependencies on ephemeral runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential bc bison flex libssl-dev libelf-dev pkg-config gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu python3-venv python3-dev swig device-tree-compiler libyaml-dev rsync xz-utils zstd lz4 cpio kmod
+          python3 -m venv "$RUNNER_TEMP/schema-venv"
+          "$RUNNER_TEMP/schema-venv/bin/pip" install 'dtschema==2026.9'
+          echo "$RUNNER_TEMP/schema-venv/bin" >> "$GITHUB_PATH"
+      - name: Fetch public pinned kernel source
+        run: |
+          git init "$RUNNER_TEMP/linux"
+          git -C "$RUNNER_TEMP/linux" remote add origin https://github.com/gregkh/linux.git
+          git -C "$RUNNER_TEMP/linux" fetch --depth=1 origin a2de78ee6ed8bf8cd99d177c74865a6e8c3cb6ea
+          git -C "$RUNNER_TEMP/linux" checkout --detach FETCH_HEAD
+      - name: Record environment and compile
+        shell: bash
+        run: |
+          mkdir "$RUNNER_TEMP/environment"
+          dpkg-query -W > "$RUNNER_TEMP/environment/packages.txt"
+          "$RUNNER_TEMP/schema-venv/bin/python" -m pip freeze > "$RUNNER_TEMP/environment/python-packages.txt"
+          aarch64-linux-gnu-gcc --version > "$RUNNER_TEMP/environment/cross-gcc.txt"
+          rustc --version > "$RUNNER_TEMP/environment/rustc.txt"
+          env | grep -E '^(ImageOS|ImageVersion)=' > "$RUNNER_TEMP/environment/runner-image.txt" || true
+          bash experiments/rk3568-kernel/compile.sh "$RUNNER_TEMP/linux" "$RUNNER_TEMP/kernel-build" "$RUNNER_TEMP/build-report"
+      - name: Retain explicit compile outputs only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rk3568-compile-only
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/build-report/
+            ${{ runner.temp }}/environment/

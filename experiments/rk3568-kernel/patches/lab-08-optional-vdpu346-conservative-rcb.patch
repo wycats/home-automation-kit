@@ -1,0 +1,68 @@
+Subject: [LAB OPTIONAL 8] media: rkvdec: isolate conservative VDPU346 RCB sizing
+
+Experimental envelope only; no claim of proven hardware overrun or correctness.
+Formula reference: rockchip-linux/mpp 20959ec3dabb313b8c33ca0b7b09c06ffd2a9caa.
+Original source attribution is retained; this local followup has not been submitted.
+
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec.c
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec.c
+@@ -1796,11 +1796,30 @@
+ 	.flatten_matrices = transpose_and_flatten_matrices,
+ };
+ 
++/*
++ * LAB ONLY: conservative envelope of MPP HEVC linear 4:2:0 RCB formulas,
++ * 8/10-bit and CTU16/32/64. This is not a hardware-validated sizing fix.
++ * Keep all ten register positions; unused slots must not be compacted.
++ * Align dimensions to the largest CTU, then cover tiled-row overhead.
++ */
++static const struct rcb_size_info vdpu346_rcb_sizes[] = {
++	{10,	PIC_WIDTH,	64},	// intrar
++	{1,	PIC_WIDTH,	64},	// transdr
++	{1,	PIC_HEIGHT,	64},	// transdc
++	{3,	PIC_WIDTH,	64},	// streamdr
++	{7,	PIC_WIDTH,	64},	// interr
++	{3,	PIC_HEIGHT,	64},	// interc
++	{22,	PIC_WIDTH,	64},	// dblkr
++	{9,	PIC_WIDTH,	64},	// saor
++	{11,	PIC_WIDTH,	64},	// fbcr
++	{67,	PIC_HEIGHT,	64},	// filtc col
++};
++
+ static const struct rkvdec_variant vdpu346_variant = {
+ 	.coded_fmts = vdpu346_coded_fmts,
+ 	.num_coded_fmts = ARRAY_SIZE(vdpu346_coded_fmts),
+-	.rcb_sizes = vdpu381_rcb_sizes,
+-	.num_rcb_sizes = ARRAY_SIZE(vdpu381_rcb_sizes),
++	.rcb_sizes = vdpu346_rcb_sizes,
++	.num_rcb_sizes = ARRAY_SIZE(vdpu346_rcb_sizes),
+ 	.ops = &vdpu381_variant_ops,
+ };
+ 
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec-rcb.c
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec-rcb.c
+@@ -24,7 +24,12 @@
+ static size_t rkvdec_rcb_size(const struct rcb_size_info *size_info,
+ 			      unsigned int width, unsigned int height)
+ {
+-	return size_info->multiplier * (size_info->axis == PIC_HEIGHT ? height : width);
++	unsigned int dimension = size_info->axis == PIC_HEIGHT ? height : width;
++
++	if (size_info->dimension_alignment)
++		dimension = ALIGN(dimension, size_info->dimension_alignment);
++
++	return (size_t)size_info->multiplier * dimension;
+ }
+ 
+ dma_addr_t rkvdec_rcb_buf_dma_addr(struct rkvdec_ctx *ctx, int id)
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec-rcb.h
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec-rcb.h
+@@ -18,6 +18,8 @@
+ struct rcb_size_info {
+ 	u8 multiplier;
+ 	enum rcb_axis axis;
++	/* Zero preserves the unaligned dimension; otherwise a power of two. */
++	u8 dimension_alignment;
+ };
+ 
+ int rkvdec_allocate_rcb(struct rkvdec_ctx *ctx, u32 width, u32 height,
