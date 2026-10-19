@@ -18,7 +18,7 @@ for binary in [root / "usr/bin/ffmpeg", root / "usr/bin/ffprobe", *[root / p.lst
     header = subprocess.check_output(["readelf", "-h", str(binary)], text=True)
     if "AArch64" not in header:
         raise ValueError(f"Not an arm64 ELF: {binary.name}")
-    result = subprocess.run(["lddtree", "-l", str(binary)], capture_output=True, text=True, check=True)
+    result = subprocess.run(["/usr/bin/python3", "/usr/bin/lddtree", "-l", str(binary)], capture_output=True, text=True, check=True)
     if result.stderr.strip():
         raise ValueError(result.stderr)
     deps = []
@@ -28,6 +28,8 @@ for binary in [root / "usr/bin/ffmpeg", root / "usr/bin/ffprobe", *[root / p.lst
             continue
         if not path.is_absolute() or not path.is_file():
             raise ValueError(f"Unresolved ELF dependency: {line}")
+        if "AArch64" not in subprocess.check_output(["readelf", "-h", str(path)], text=True):
+            raise ValueError(f"Dependency is not arm64 ELF: {line}")
         dest = root / path.as_posix().lstrip("/")
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, dest)  # Materialize symlinks; no links to CI host.
@@ -35,9 +37,12 @@ for binary in [root / "usr/bin/ffmpeg", root / "usr/bin/ffprobe", *[root / p.lst
         deps.append(line)
     records.append({"executable": binary.relative_to(root).as_posix(), "libraries": deps})
 
+applets = set(subprocess.check_output([str(root / "bin/busybox"), "--list"], text=True).splitlines())
 for applet in ["sh", "mount", "umount", "ls", "cat", "dmesg", "sleep", "setsid",
                "cttyhack", "mkdir", "echo", "uname", "head", "tail", "grep", "sed",
                "awk", "sha256sum", "time", "sync", "poweroff", "reboot", "find", "cp"]:
+    if applet not in applets:
+        raise ValueError(f"Required BusyBox applet missing: {applet}")
     (root / "bin" / applet).symlink_to("busybox")
 for applet in ["modprobe", "modinfo", "lsmod", "rmmod", "depmod", "insmod"]:
     (root / "bin" / applet).symlink_to("kmod")

@@ -35,5 +35,8 @@ sudo mknod -m 600 "$work/rootfs/dev/console" c 5 1
 cp "$work/kernel/boot/Image" "$work/kernel/boot/odroid-m1.dtb" "$work/kernel/kernelrelease" "$work/output/"
 cp "$work/kernel/manifest.json" "$work/output/kernel-manifest.json"
 cp "$packet/README.md" "$work/output/README.md"
+cp "$packet/sources.json" "$work/output/userspace-sources.json"
+cp "$userspace/packages.txt" "$work/output/userspace-packages.txt"
+cp "$userspace/software-smoke.txt" "$work/output/software-smoke.txt"
 sha256sum "$work/output/"* > "$work/output-hashes.txt"
 echo 'Payload assembled. No bootloader/disk image, hardware decode or deployment validated.'
