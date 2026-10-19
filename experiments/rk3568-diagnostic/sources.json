@@ -1,0 +1,68 @@
+{
+  "ffmpeg": {
+    "repository": "https://github.com/FFmpeg/FFmpeg.git",
+    "commit": "1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7"
+  },
+  "patch_source": {
+    "repository": "https://github.com/nyok92/HAOS-rock5b",
+    "commit": "e4be9f2eb3af253f58e779c6ae11b6b7668a0719"
+  },
+  "patches": [
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0001-avutil-hwcontext-Add-hwdevice-type-for-V4L2-Request-API.patch",
+      "sha256": "973db50a54f4f22ab56919c75b16fa490d4187e109cea1d4e9b62465c30a6db0"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0002-avutil-hwcontext_v4l2request-Probe-for-a-capable-media-and-video-device.patch",
+      "sha256": "470239f2d4254625c59bf70184bd37afc3075c7c5eabbcb720275586c7d4a60f"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0003-avcodec-Add-common-V4L2-Request-API-code.patch",
+      "sha256": "6a969a877ad1b2948b24ee95cb4a1663bab49120ce741c27d443c48d14344a69"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0004-avcodec-v4l2request-Add-common-decode-support-for-hwaccels.patch",
+      "sha256": "12823d0e0a8d89beeea912ab71dec8426f4919b20d9581ac81a64493f00dc368"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0005-avcodec-Add-V4L2-Request-API-mpeg2-hwaccel.patch",
+      "sha256": "fb99f25d81facae64c2ff7a913f13ccc9154f7d4f9fafc6811cc12e0123b60ac"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0006-avcodec-h264dec-add-ref_pic_marking-and-pic_order_cnt-bit_size-to-slice-context.patch",
+      "sha256": "4cba7f4eaa42f45e69342f29144ec4e67f9cdff16e389c69f68714f9b9043f11"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0007-avcodec-Add-V4L2-Request-API-h264-hwaccel.patch",
+      "sha256": "5b4b299974ce7bdb605a6d929c157b34198e15b1c69d33ee6c856db8d1029398"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0008-avcodec-Add-V4L2-Request-API-hevc-hwaccel.patch",
+      "sha256": "a8e98c366a0c41248d9c1411adb7001e8910c94ba9837bcbb8d0b6772f7432d4"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0009-avcodec-Add-V4L2-Request-API-vp8-hwaccel.patch",
+      "sha256": "d54f360f9c75865de741c6d6b1a5c5e8c00b6cbed9e1b9886643a17cc280d3a0"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0010-avcodec-Add-V4L2-Request-API-vp9-hwaccel.patch",
+      "sha256": "a2899b3c7c27925374e6de2e71c12d7b3ccb667c0a3b25aaa21801063c3572ed"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0011-avcodec-Add-V4L2-Request-API-av1-hwaccel.patch",
+      "sha256": "73f98430a64de16088046c7a841d3e6523b550837dac98da0f01d24a737cd152"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0012-avutil-hwcontext_v4l2request-Add-support-for-AFBC_16X16_SPLIT-pix-fmts.patch",
+      "sha256": "a5d42cb21ebcb9204ba0a483146a59067f3a53662464717b49e4086badd1c539"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0013-avutil-hwcontext_v4l2request-Add-support-for-BROADCOM_SAND128-pix-fmts.patch",
+      "sha256": "c7b9ca78d284c54d61b83b07261e50300290dc7e63019ab5b3f270232d3a924d"
+    },
+    {
+      "path": "buildroot-external/package/ffmpeg-custom2/0030-v4l2request-hevc-set-sps-rps-controls.patch",
+      "sha256": "1b7d59711154b22fd5c2599de848e2cd3edf56325be8ae1385b2580fe8d58383"
+    }
+  ]
+}

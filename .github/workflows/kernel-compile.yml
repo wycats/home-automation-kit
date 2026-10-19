@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'experiments/rk3568-kernel/**'
+      - 'experiments/rk3568-diagnostic/**'
       - '.github/workflows/kernel-compile.yml'
   workflow_dispatch:
 permissions:
@@ -11,7 +12,20 @@ concurrency:
   group: rk3568-kernel-lab-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  packaging-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: python3 experiments/rk3568-diagnostic/test_packaging.py
+      - run: |
+          for script in experiments/rk3568-kernel/package.sh experiments/rk3568-diagnostic/{build_userspace,assemble}.sh; do
+            bash -n "$script"
+          done
   compile:
+    needs: packaging-tests
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -48,6 +62,8 @@ jobs:
           rustc --version > "$RUNNER_TEMP/environment/rustc.txt"
           env | grep -E '^(ImageOS|ImageVersion)=' > "$RUNNER_TEMP/environment/runner-image.txt" || true
           bash experiments/rk3568-kernel/compile.sh "$RUNNER_TEMP/linux" "$RUNNER_TEMP/kernel-build" "$RUNNER_TEMP/build-report"
+      - name: Stage matching kernel, modules and UAPI
+        run: bash experiments/rk3568-kernel/package.sh "$RUNNER_TEMP/linux" "$RUNNER_TEMP/kernel-build" "$RUNNER_TEMP/build-report"
       - name: Retain explicit compile outputs only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -58,3 +74,52 @@ jobs:
           path: |
             ${{ runner.temp }}/build-report/
             ${{ runner.temp }}/environment/
+  userspace:
+    needs: packaging-tests
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install ephemeral native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential git python3 pkg-config libdrm-dev libudev-dev libx264-dev libx265-dev busybox-static kmod v4l-utils pax-utils python3-pyelftools rsync cpio xz-utils
+      - name: Build userspace and test staged runtime
+        run: bash experiments/rk3568-diagnostic/build_userspace.sh "$RUNNER_TEMP/userspace" "$RUNNER_TEMP/userspace-report"
+      - name: Retain userspace results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rk3568-userspace
+          retention-days: 7
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/userspace-report/
+  assemble:
+    needs: [compile, userspace]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rk3568-compile-only
+          path: ${{ runner.temp }}/kernel-artifacts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rk3568-userspace
+          path: ${{ runner.temp }}/userspace-report
+      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y kmod cpio xz-utils
+      - name: Assemble RAM-root payload and inspect closure
+        run: bash experiments/rk3568-diagnostic/assemble.sh "$RUNNER_TEMP/kernel-artifacts/build-report/kernel-payload.tar.xz" "$RUNNER_TEMP/userspace-report" "$RUNNER_TEMP/assembly"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rk3568-diagnostic-payload
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/assembly/output/
+            ${{ runner.temp }}/assembly/output-hashes.txt

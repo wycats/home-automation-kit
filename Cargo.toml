@@ -6,7 +6,7 @@ license = "MIT"
 description = "Typed observations and read-only diagnostics for home automation"
 repository = "https://github.com/wycats/home-automation-kit"
 publish = false
-exclude = ["experiments/rk3568-kernel/**"]
+exclude = ["experiments/rk3568-kernel/**", "experiments/rk3568-diagnostic/**"]
 
 [dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["blocking"] }
