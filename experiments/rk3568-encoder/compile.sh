@@ -16,8 +16,8 @@ git init "$work/linux"
 git -C "$work/linux" fetch --depth=1 "$(value kernel repository)" "$(value kernel commit)"
 git -C "$work/linux" checkout --detach FETCH_HEAD
 test "$(git -C "$work/linux" rev-parse HEAD)" = "$(value kernel commit)"
-git -C "$work/linux" apply --check "$packet/$(value patch path)"
-git -C "$work/linux" apply "$packet/$(value patch path)"
+git -C "$work/linux" apply --check --whitespace=error "$packet/$(value patch path)"
+git -C "$work/linux" apply --whitespace=error "$packet/$(value patch path)"
 cd "$work/linux"
 make ARCH=arm64 defconfig > "$report/config.log" 2>&1
 scripts/config --enable MEDIA_SUPPORT --enable MEDIA_PLATFORM_SUPPORT --enable MEDIA_PLATFORM_DRIVERS --enable VIDEO_DEV --enable V4L_MEM2MEM_DRIVERS --module VIDEO_HANTRO --enable VIDEO_HANTRO_ROCKCHIP
@@ -36,11 +36,16 @@ grep -q ' T hantro_h264_enc_prepare_run$' "$report/symbols.txt"
 make ARCH=arm64 INSTALL_HDR_PATH="$work/uapi" headers_install > "$report/headers.log" 2>&1
 gcc -Wall -Wextra -Werror -I"$work/uapi/include" "$packet/abi.c" -o "$work/abi"
 "$work/abi" > "$report/abi.json"
+gcc -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+  -I"$work/uapi/include" -I"$work/linux/drivers/media/platform/verisilicon" \
+  "$packet/validation_test.c" -o "$work/validation-test"
+"$work/validation-test" > "$report/validation-tests.txt" 2>&1
 git init "$work/client"
 git -C "$work/client" fetch --depth=1 "$(value client repository)" "$(value client commit)"
 git -C "$work/client" checkout --detach FETCH_HEAD
 test "$(git -C "$work/client" rev-parse HEAD)" = "$(value client commit)"
-make -C "$work/client" -j2 CFLAGS="-I. -I$work/uapi/include $(pkg-config --cflags cairo libudev) -O2 -Wall -Wextra" > "$report/client-build.log" 2>&1
+# Old client headers relied on transitive stdint declarations from Linux headers.
+make -C "$work/client" -j2 CFLAGS="-include stdint.h -I. -I$work/uapi/include $(pkg-config --cflags cairo libudev) -O2 -Wall -Wextra" > "$report/client-build.log" 2>&1
 file "$work/client/v4l2-hantro-h264-encoder" > "$report/client-elf.txt"
 readelf -d "$work/client/v4l2-hantro-h264-encoder" > "$report/client-dynamic.txt"
 sha256sum "$work/client/v4l2-hantro-h264-encoder" > "$report/client-hash.txt"

@@ -242,10 +242,18 @@ index 8650cc4..1f261af 100644
  #define     H1_REG_INTERRUPT_FRAME_RDY			BIT(2)
  #define     H1_REG_INTERRUPT_DIS_BIT			BIT(1)
 diff --git a/drivers/media/platform/verisilicon/hantro_h264.c b/drivers/media/platform/verisilicon/hantro_h264.c
-index 2414782..9cd7fa8 100644
+index 2414782..0cc7131 100644
 --- a/drivers/media/platform/verisilicon/hantro_h264.c
 +++ b/drivers/media/platform/verisilicon/hantro_h264.c
-@@ -198,6 +198,644 @@ static const u32 h264_cabac_table[] = {
+@@ -15,6 +15,7 @@
+ #include <media/v4l2-mem2mem.h>
+ 
+ #include "hantro.h"
++#include "hantro_h264_enc_validate.h"
+ #include "hantro_hw.h"
+ 
+ /* Size with u32 units. */
+@@ -198,6 +199,644 @@ static const u32 h264_cabac_table[] = {
  	0x1f0c2517, 0x1f261440
  };
  
@@ -890,7 +898,7 @@ index 2414782..9cd7fa8 100644
  static void
  assemble_scaling_list(struct hantro_ctx *ctx)
  {
-@@ -519,3 +1157,138 @@ int hantro_h264_dec_init(struct hantro_ctx *ctx)
+@@ -519,3 +1158,139 @@ int hantro_h264_dec_init(struct hantro_ctx *ctx)
  
  	return 0;
  }
@@ -925,7 +933,8 @@ index 2414782..9cd7fa8 100644
 +	if (WARN_ON(!ctrls->rc))
 +		return -EINVAL;
 +
-+	return 0;
++	return hantro_h264_enc_validate(ctrls->encode, ctrls->rc,
++				      ctx->src_fmt.width, ctx->src_fmt.height);
 +}
 +
 +void hantro_h264_enc_exit(struct hantro_ctx *ctx)
@@ -1029,6 +1038,48 @@ index 2414782..9cd7fa8 100644
 +
 +	return ret;
 +}
+diff --git a/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h b/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h
+new file mode 100644
+index 0000000..ac24fd1
+--- /dev/null
++++ b/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h
+@@ -0,0 +1,36 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef HANTRO_H264_ENC_VALIDATE_H
++#define HANTRO_H264_ENC_VALIDATE_H
++#include <linux/errno.h>
++#include <linux/v4l2-controls.h>
++
++/* Initial laboratory envelope. This is not complete request/DMA validation. */
++static inline int hantro_h264_enc_validate(
++	const struct v4l2_ctrl_h264_encode_params *p,
++	const struct v4l2_ctrl_h264_encode_rc *r,
++	unsigned int width, unsigned int height)
++{
++	if (!p || !r || width < 16 || width > 1920 ||
++	    height < 16 || height > 1088 || width % 16 || height % 16)
++		return -EINVAL;
++	/* These values index 52-element tables and select a CABAC table. */
++	if (r->qp > 51 || r->qp_min > r->qp || r->qp_max < r->qp ||
++	    r->qp_max > 51 || p->cabac_init_idc > 2)
++		return -EINVAL;
++	if (p->slice_type != V4L2_H264_SLICE_TYPE_I &&
++	    p->slice_type != V4L2_H264_SLICE_TYPE_P)
++		return -EINVAL;
++	if (p->slice_size_mb_rows < 0 ||
++	    (unsigned int)p->slice_size_mb_rows > height / 16 ||
++	    p->disable_deblocking_filter_idc > 2 ||
++	    p->pic_init_qp_minus26 < -26 || p->pic_init_qp_minus26 > 25 ||
++	    p->slice_alpha_c0_offset_div2 < -6 || p->slice_alpha_c0_offset_div2 > 6 ||
++	    p->slice_beta_offset_div2 < -6 || p->slice_beta_offset_div2 > 6 ||
++	    p->chroma_qp_index_offset < -12 || p->chroma_qp_index_offset > 12 ||
++	    p->flags & ~(V4L2_H264_ENCODE_FLAG_ENTROPY_CODING_MODE |
++			 V4L2_H264_ENCODE_FLAG_TRANSFORM_8X8_MODE |
++			 V4L2_H264_ENCODE_FLAG_CONSTRAINED_INTRA_PRED))
++		return -EINVAL;
++	return 0;
++}
++#endif
 diff --git a/drivers/media/platform/verisilicon/hantro_hw.h b/drivers/media/platform/verisilicon/hantro_hw.h
 index 13e573f..3c31c1f 100644
 --- a/drivers/media/platform/verisilicon/hantro_hw.h
@@ -1404,7 +1455,7 @@ index 02673be..5b7f6f8 100644
  	.num_irqs = ARRAY_SIZE(rk3568_vepu_irqs),
 diff --git a/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
 new file mode 100644
-index 0000000..d8088c7
+index 0000000..242717b
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
 @@ -0,0 +1,492 @@
@@ -1655,12 +1706,12 @@ index 0000000..d8088c7
 +		struct vb2_buffer *buf;
 +
 +		queue = v4l2_m2m_get_vq(ctx->fh.m2m_ctx,
-+					V4L2_BUF_TYPE_VIDEO_CAPTURE);
++					V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
 +
 +		reference_ts = encode_params->reference_ts;
 +		buf = vb2_find_buffer(queue, reference_ts);
 +		if (!buf)
-+			return 0;
++			return -EINVAL;
 +
 +		ref_buf = to_vb2_v4l2_buffer(buf);
 +		enc_buf = hantro_get_enc_buf(ref_buf);

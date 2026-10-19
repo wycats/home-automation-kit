@@ -2,4 +2,5 @@
 # Patch context contains significant leading spaces and blank context lines.
 # compile.sh checks the applied source with git apply --whitespace=error.
 experiments/rk3568-kernel/patches/*.patch -whitespace
+experiments/rk3568-encoder/patches/*.patch -whitespace
 experiments/rk3568-kernel/config/* linguist-vendored

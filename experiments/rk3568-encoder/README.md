@@ -32,8 +32,12 @@ IRQ setup, controls and queue callbacks. It preserves modern decoder buffer
 limits and non-threaded IRQ behavior, uses ONESHOT for threaded handlers, and
 places reconstruction state on the CAPTURE buffer that actually contains it.
 Failed parameter preparation now returns an error instead of reporting success
-without launching the hardware. An obsolete unaligned include and unused
-register read are updated. These are source-level corrections, not hardware
+without launching the hardware. A missing reference now fails explicitly and
+uses the multi-planar capture queue. A pure helper rejects out-of-range QP table
+indices, invalid slice/CABAC fields and dimensions outside the initial envelope
+before register writes; host regressions execute that exact helper with ASan
+and UBSan. Full control validation is still incomplete. An obsolete unaligned
+include and unused register read are updated. These are source-level corrections, not hardware
 regressions tested on an M1.
 
 The workflow compiles the Hantro objects, links their relocatable driver object,
@@ -65,7 +69,10 @@ Then use spare hardware or a separately approved outage, start at low resolution
 and validate the resulting bitstream with an independent decoder. Progress to
 1080p30, then 1080p60 only after correctness. Require expected dimensions/frame
 count, monotonic timestamps, no kernel/IOMMU errors, repeated-session recovery,
-and measured throughput/CPU/temperature. Compare decoded content and quality to
+and measured throughput/CPU/temperature. In particular, 1080 visible lines need
+1088 padded coded lines with correct SPS cropping: the old client only exercises
+640x480, and an encoder claiming a padded size alone is not sufficient.
+Compare decoded content and quality to
 the synthetic source; lossy H.264 output is not expected to hash identically.
 Measure scaling/copy costs separately before calling this full transcoding.
 
