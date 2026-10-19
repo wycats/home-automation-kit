@@ -1,0 +1,61 @@
+From: Codex experiment (local, unpublished)
+Subject: [LAB ONLY] Bound RK3568 RPS arrays and scope DRAM-only decode to ODROID-M1
+
+Context: the imported RK3568 v3 patch predates upstream f0b9d7e5be06
+and inserts obsolete 65-element controls. Preserve 64/32 bounds.
+Fix unit-address to match first reg; enable decoder only on the lab M1 DT.
+No deployment; this patch is an uncompiled experiment, not an upstream claim.
+
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec.c
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec.c
+@@ -278,12 +278,12 @@
+ 	{
+ 		.cfg.id = V4L2_CID_STATELESS_HEVC_EXT_SPS_ST_RPS,
+ 		.cfg.ops = &rkvdec_ctrl_ops,
+-		.cfg.dims = { 65 },
++		.cfg.dims = { 64 },
+ 	},
+ 	{
+ 		.cfg.id = V4L2_CID_STATELESS_HEVC_EXT_SPS_LT_RPS,
+ 		.cfg.ops = &rkvdec_ctrl_ops,
+-		.cfg.dims = { 65 },
++		.cfg.dims = { 32 },
+ 	},
+ };
+ 
+--- a/arch/arm64/boot/dts/rockchip/rk356x-base.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk356x-base.dtsi
+@@ -652,7 +652,8 @@
+ 		#iommu-cells = <0>;
+ 	};
+ 
+-	vdec: video-codec@fdf80100 {
++	vdec: video-codec@fdf80200 {
++		status = "disabled";
+ 		compatible = "rockchip,rk3568-vdec";
+ 		reg = <0x0 0xfdf80200 0x0 0x500>,
+ 		      <0x0 0xfdf80100 0x0 0x100>,
+@@ -679,6 +680,7 @@
+ 	};
+ 
+ 	vdec_mmu: iommu@fdf80800 {
++		status = "disabled";
+ 		compatible = "rockchip,rk3568-iommu";
+ 		reg = <0x0 0xfdf80800 0x0 0x40>, <0x0 0xfdf80840 0x0 0x40>;
+ 		interrupts = <GIC_SPI 92 IRQ_TYPE_LEVEL_HIGH>;
+--- a/arch/arm64/boot/dts/rockchip/rk3568-odroid-m1.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3568-odroid-m1.dts
+@@ -741,3 +741,13 @@
+ 		remote-endpoint = <&hdmi_in_vp0>;
+ 	};
+ };
++
++/* Isolated decoder lab: enable only on this board, with DRAM RCBs. */
++&vdec {
++	/delete-property/ sram;
++	status = "okay";
++};
++
++&vdec_mmu {
++	status = "okay";
++};

@@ -1,0 +1,222 @@
+Subject: [LAB 7/7] media: rkvdec: rebuild complete SPS RPS tables and fail closed
+
+Local experimental followup, not submitted upstream. Original files retain their attribution.
+Removes incomplete single-set cache, validates derived final sets, propagates assembly
+failures through both backends and completes each prepared request before returning.
+
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec-hevc-common.c
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec-hevc-common.c
+@@ -389,48 +389,69 @@
+ 	st_rps->num_delta_pocs = st_rps->num_positive_pics + st_rps->num_negative_pics;
+ }
+ 
+-static void rkvdec_hevc_prepare_hw_st_rps(struct rkvdec_hevc_run *run, struct rkvdec_rps *rps,
+-					  struct v4l2_ctrl_hevc_ext_sps_st_rps *cache)
+-{
+-	int idx;
+-
+-	if (!run->ext_sps_st_rps)
+-		return;
+-
+-	if (!memcmp(cache, run->ext_sps_st_rps, sizeof(struct v4l2_ctrl_hevc_ext_sps_st_rps)))
+-		return;
+-
+-	struct calculated_rps_st_set *calculated_rps_st_sets =
+-		kcalloc(run->sps->num_short_term_ref_pic_sets,
+-			sizeof(*calculated_rps_st_sets), GFP_KERNEL);
+-
+-	if (!calculated_rps_st_sets)
+-		return;
++static int rkvdec_hevc_prepare_hw_st_rps(struct rkvdec_hevc_run *run,
++					 struct rkvdec_rps *rps)
++{
++	struct calculated_rps_st_set *sets;
++	int idx, ret = 0;
++
++	if (!run->sps->num_short_term_ref_pic_sets) {
++		memset(rps, 0, sizeof(*rps));
++		return 0;
++	}
++
++	sets = kcalloc(run->sps->num_short_term_ref_pic_sets,
++		       sizeof(*sets), GFP_KERNEL);
++	if (!sets)
++		return -ENOMEM;
+ 
+ 	for (idx = 0; idx < run->sps->num_short_term_ref_pic_sets; idx++) {
+-		const struct v4l2_ctrl_hevc_ext_sps_st_rps *rps_data = &run->ext_sps_st_rps[idx];
+-
+-		if (rps_data->flags & V4L2_HEVC_EXT_SPS_ST_RPS_FLAG_INTER_REF_PIC_SET_PRED) {
+-			if (st_ref_pic_set_prediction(run, idx, calculated_rps_st_sets))
+-				goto free_sets;
++		const struct v4l2_ctrl_hevc_ext_sps_st_rps *data = &run->ext_sps_st_rps[idx];
++
++		if (data->flags & V4L2_HEVC_EXT_SPS_ST_RPS_FLAG_INTER_REF_PIC_SET_PRED) {
++			ret = st_ref_pic_set_prediction(run, idx, sets);
++			if (ret)
++				goto out;
+ 		} else {
+-			st_ref_pic_set_calculate(run, idx, calculated_rps_st_sets);
+-		}
+-	}
+-
+-	rkvdec_hevc_assemble_hw_st_rps(run, rps, calculated_rps_st_sets);
+-
+-	memcpy(cache, run->ext_sps_st_rps, sizeof(struct v4l2_ctrl_hevc_ext_sps_st_rps));
+-
+-free_sets:
+-	kfree(calculated_rps_st_sets);
+-}
+-
+-void rkvdec_hevc_assemble_hw_rps(struct rkvdec_hevc_run *run, struct rkvdec_rps *rps,
+-				 struct v4l2_ctrl_hevc_ext_sps_st_rps *st_cache)
+-{
+-	rkvdec_hevc_prepare_hw_st_rps(run, rps, st_cache);
++			if (data->num_negative_pics + data->num_positive_pics >
++			    RKVDEC_HEVC_MAX_DELTA_POCS) {
++				ret = -EINVAL;
++				goto out;
++			}
++			st_ref_pic_set_calculate(run, idx, sets);
++		}
++
++		/* A final predicted set must fit too, even if no later set references it. */
++		if (sets[idx].num_delta_pocs > RKVDEC_HEVC_MAX_DELTA_POCS) {
++			ret = -EINVAL;
++			goto out;
++		}
++	}
++
++	/* Commit only after every set is valid; also clear entries no longer in use. */
++	memset(rps, 0, sizeof(*rps));
++	rkvdec_hevc_assemble_hw_st_rps(run, rps, sets);
++out:
++	kfree(sets);
++	return ret;
++}
++
++int rkvdec_hevc_assemble_hw_rps(struct rkvdec_hevc_run *run, struct rkvdec_rps *rps)
++{
++	const struct v4l2_ctrl_hevc_sps *sps = run->sps;
++	int ret;
++
++	if (sps->num_short_term_ref_pic_sets > RKVDEC_HEVC_MAX_ST_RPS ||
++	    sps->num_long_term_ref_pics_sps > RKVDEC_HEVC_MAX_LT_RPS ||
++	    (sps->num_short_term_ref_pic_sets && !run->ext_sps_st_rps) ||
++	    (sps->num_long_term_ref_pics_sps && !run->ext_sps_lt_rps))
++		return -EINVAL;
++
++	ret = rkvdec_hevc_prepare_hw_st_rps(run, rps);
++	if (ret)
++		return ret;
+ 	rkvdec_hevc_assemble_hw_lt_rps(run, rps);
++	return 0;
+ }
+ 
+ struct vb2_buffer *
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec-hevc-common.h
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec-hevc-common.h
+@@ -80,8 +80,7 @@
+ void compute_tiles_non_uniform(struct rkvdec_hevc_run *run, u16 log2_min_cb_size,
+ 			       u16 width, u16 height, s32 pic_in_cts_width,
+ 			       s32 pic_in_cts_height, u16 *column_width, u16 *row_height);
+-void rkvdec_hevc_assemble_hw_rps(struct rkvdec_hevc_run *run, struct rkvdec_rps *rps,
+-				 struct v4l2_ctrl_hevc_ext_sps_st_rps *st_cache);
++int rkvdec_hevc_assemble_hw_rps(struct rkvdec_hevc_run *run, struct rkvdec_rps *rps);
+ void rkvdec_hevc_assemble_hw_scaling_list(struct rkvdec_ctx *ctx,
+ 					  struct rkvdec_hevc_run *run,
+ 					  struct scaling_factor *scaling_factor,
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec-vdpu381-hevc.c
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec-vdpu381-hevc.c
+@@ -117,7 +117,6 @@
+ struct rkvdec_hevc_ctx {
+ 	struct rkvdec_aux_buf			priv_tbl;
+ 	struct v4l2_ctrl_hevc_scaling_matrix	scaling_matrix_cache;
+-	struct v4l2_ctrl_hevc_ext_sps_st_rps	st_cache;
+ 	struct rkvdec_vdpu381_regs_hevc		regs;
+ };
+ 
+@@ -594,26 +593,31 @@
+ 	struct rkvdec_hevc_ctx *hevc_ctx = ctx->priv;
+ 	struct rkvdec_hevc_priv_tbl *tbl = hevc_ctx->priv_tbl.cpu;
+ 
++	int ret = 0;
++
+ 	rkvdec_hevc_run_preamble(ctx, &run);
+ 
+ 	rkvdec_hevc_assemble_hw_scaling_list(ctx, &run, &tbl->scaling_list,
+ 					     &hevc_ctx->scaling_matrix_cache);
+ 	assemble_hw_pps(ctx, &run);
+ 
+-	/*
+-	 * On vdpu381, not setting the long and short term ref sets will just output wrong frames.
+-	 * Let's just warn about it and let the decoder run anyway.
+-	 */
+ 	if ((!ctx->has_sps_lt_rps && run.sps->num_long_term_ref_pics_sps) ||
+ 	    (!ctx->has_sps_st_rps && run.sps->num_short_term_ref_pic_sets)) {
+-		dev_warn_ratelimited(rkvdec->dev, "Long and short term RPS not set\n");
+-	} else {
+-		rkvdec_hevc_assemble_hw_rps(&run, &tbl->rps, &hevc_ctx->st_cache);
++		dev_err_ratelimited(rkvdec->dev, "Long and short term RPS not set\n");
++		ret = -EINVAL;
++		goto out;
+ 	}
+ 
++	ret = rkvdec_hevc_assemble_hw_rps(&run, &tbl->rps);
++	if (ret)
++		goto out;
++
+ 	config_registers(ctx, &run);
+ 
++out:
+ 	rkvdec_run_postamble(ctx, &run.base);
++	if (ret)
++		return ret;
+ 
+ 	rkvdec_schedule_watchdog(rkvdec, hevc_ctx->regs.common.reg032_timeout_threshold);
+ 
+--- a/drivers/media/platform/rockchip/rkvdec/rkvdec-vdpu383-hevc.c
++++ b/drivers/media/platform/rockchip/rkvdec/rkvdec-vdpu383-hevc.c
+@@ -124,7 +124,6 @@
+ struct rkvdec_hevc_ctx {
+ 	struct rkvdec_aux_buf			priv_tbl;
+ 	struct v4l2_ctrl_hevc_scaling_matrix	scaling_matrix_cache;
+-	struct v4l2_ctrl_hevc_ext_sps_st_rps	st_cache;
+ 	struct vdpu383_regs_h26x		regs;
+ };
+ 
+@@ -543,6 +542,8 @@
+ 	struct rkvdec_hevc_priv_tbl *tbl = hevc_ctx->priv_tbl.cpu;
+ 	u32 timeout_threshold;
+ 
++	int ret = 0;
++
+ 	rkvdec_hevc_run_preamble(ctx, &run);
+ 
+ 	/*
+@@ -553,17 +554,23 @@
+ 	if ((!ctx->has_sps_lt_rps && run.sps->num_long_term_ref_pics_sps) ||
+ 	    (!ctx->has_sps_st_rps && run.sps->num_short_term_ref_pic_sets)) {
+ 		dev_err_ratelimited(rkvdec->dev, "Long and short term RPS not set\n");
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto out;
+ 	}
+ 
+ 	rkvdec_hevc_assemble_hw_scaling_list(ctx, &run, &tbl->scaling_list,
+ 					     &hevc_ctx->scaling_matrix_cache);
+ 	assemble_hw_pps(ctx, &run);
+-	rkvdec_hevc_assemble_hw_rps(&run, &tbl->rps, &hevc_ctx->st_cache);
++	ret = rkvdec_hevc_assemble_hw_rps(&run, &tbl->rps);
++	if (ret)
++		goto out;
+ 
+ 	config_registers(ctx, &run);
+ 
++out:
+ 	rkvdec_run_postamble(ctx, &run.base);
++	if (ret)
++		return ret;
+ 
+ 	timeout_threshold = hevc_ctx->regs.common.reg013_core_timeout_threshold;
+ 	rkvdec_schedule_watchdog(rkvdec, timeout_threshold);

@@ -1,0 +1,81 @@
+{
+  "purpose": "Standalone Linux kernel compile only; not an HAOS image or deployment. Public inputs only.",
+  "kernel": {
+    "repository": "https://github.com/gregkh/linux.git",
+    "tag": "v7.2.11",
+    "commit": "a2de78ee6ed8bf8cd99d177c74865a6e8c3cb6ea"
+  },
+  "public_haos_config_commit": "b22f929d3bc8895f5cf84d13d71a24714b59eed4",
+  "configs": [
+    {
+      "path": "config/00-kernel-arm64-rockchip.config",
+      "upstream_path": "buildroot-external/kernel/v6.18.y/kernel-arm64-rockchip.config",
+      "url": "https://raw.githubusercontent.com/home-assistant/operating-system/b22f929d3bc8895f5cf84d13d71a24714b59eed4/buildroot-external/kernel/v6.18.y/kernel-arm64-rockchip.config",
+      "sha256": "e7c7d0069c3d004f88600841203d5d8263994a5832e6932294c9d8f4001c7a38"
+    },
+    {
+      "path": "config/01-haos.config",
+      "upstream_path": "buildroot-external/kernel/v6.18.y/haos.config",
+      "url": "https://raw.githubusercontent.com/home-assistant/operating-system/b22f929d3bc8895f5cf84d13d71a24714b59eed4/buildroot-external/kernel/v6.18.y/haos.config",
+      "sha256": "6ecf2e0d68bd0717e5f5bab061b44a01b73a7873a332b5d0a7bb77a04be622cb"
+    },
+    {
+      "path": "config/02-docker.config",
+      "upstream_path": "buildroot-external/kernel/v6.18.y/docker.config",
+      "url": "https://raw.githubusercontent.com/home-assistant/operating-system/b22f929d3bc8895f5cf84d13d71a24714b59eed4/buildroot-external/kernel/v6.18.y/docker.config",
+      "sha256": "4915ac68da74bc3af283f937774509a13e2bda7b015324d219b4a185b23d6775"
+    },
+    {
+      "path": "config/03-device-support.config",
+      "upstream_path": "buildroot-external/kernel/v6.18.y/device-support.config",
+      "url": "https://raw.githubusercontent.com/home-assistant/operating-system/b22f929d3bc8895f5cf84d13d71a24714b59eed4/buildroot-external/kernel/v6.18.y/device-support.config",
+      "sha256": "7421c96e01eca299f81daf596eb06a7ea327a832e9f5e3a67e193c870947761e"
+    },
+    {
+      "path": "config/04-device-support-wireless.config",
+      "upstream_path": "buildroot-external/kernel/v6.18.y/device-support-wireless.config",
+      "url": "https://raw.githubusercontent.com/home-assistant/operating-system/b22f929d3bc8895f5cf84d13d71a24714b59eed4/buildroot-external/kernel/v6.18.y/device-support-wireless.config",
+      "sha256": "f3486405845ad540f15d1ae9dd778045142768e6c1a6f736fa8686ccfac81bd5"
+    },
+    {
+      "path": "config/05-kernel.config",
+      "upstream_path": "buildroot-external/board/hardkernel/odroid-m1/kernel.config",
+      "url": "https://raw.githubusercontent.com/home-assistant/operating-system/b22f929d3bc8895f5cf84d13d71a24714b59eed4/buildroot-external/board/hardkernel/odroid-m1/kernel.config",
+      "sha256": "b93bf7b13a33346298111b9d394f6f2b73a3e3b10da16b56b1b6bc1fe6efa0fa"
+    }
+  ],
+  "patches": [
+    {
+      "path": "patches/rk3568-01.patch",
+      "sha256": "c5face93536f6b0219ef5df5dc8de684cc29d79f8c146eca0359780663a1e80a"
+    },
+    {
+      "path": "patches/rk3568-02.patch",
+      "sha256": "fbc1119890dd163e8d15da22d178b1bff405c554abce52c6b5deceb3c9277425"
+    },
+    {
+      "path": "patches/rk3568-03.patch",
+      "sha256": "1a7e2a02a3899874cb94b3b12db7fe9acd51cf588cd8feec76730a8b10e084d2"
+    },
+    {
+      "path": "patches/canonical-041-rkvdec-rcb-correct-size.patch",
+      "sha256": "48d20691a0f118d080bad9917ac0f43506a4da55d79e343c08e64d3418370c59"
+    },
+    {
+      "path": "patches/canonical-083-rkvdec-bound-sps-rps-tables.patch",
+      "sha256": "b1b34dd5c62e77192c165cfbdc2e9f8f1930fbf23df3bc4a389d3a2d0eba7944"
+    },
+    {
+      "path": "patches/lab-06-m1-dram-only-and-bounds.patch",
+      "sha256": "6f4ff3cba11affadd7b3bbe25350fd1829f4d38b4677cc8b9edb633e3baf3f16"
+    },
+    {
+      "path": "patches/lab-07-hevc-rps-fail-closed.patch",
+      "sha256": "b55098be7fab45263086aca1d228f59029b906f86d224406354cc3d6d8f8a470"
+    },
+    {
+      "path": "patches/lab-08-optional-vdpu346-conservative-rcb.patch",
+      "sha256": "6ff447057628db0c9de67ad7425779994f0c1186eede984738d9c29c0ebf628f"
+    }
+  ]
+}
