@@ -1,5 +1,8 @@
 # RK3568 H.264 encoder compile experiment
 
+The maintained Rust client's device-free foundation and verification commands
+are in [CLIENT.md](CLIENT.md). Hardware execution remains disabled.
+
 Browser playback needs H.264 derivatives up to 1920x1080 while keeping original
 recordings. This isolates an encoder investigation from the decoder and RAM-root
 bundle. It does not modify those experiments, produce a boot image, load modules,

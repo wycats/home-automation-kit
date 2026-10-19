@@ -6,6 +6,7 @@ license = "MIT"
 description = "Typed observations and read-only diagnostics for home automation"
 repository = "https://github.com/wycats/home-automation-kit"
 publish = false
+default-run = "home-automation-kit"
 exclude = ["experiments/rk3568-kernel/**", "experiments/rk3568-encoder/**"]
 
 [dependencies]

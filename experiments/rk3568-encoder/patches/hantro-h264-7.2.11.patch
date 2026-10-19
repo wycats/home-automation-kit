@@ -102,19 +102,25 @@ index 0353de1..b5415c1 100644
 +
  #endif /* HANTRO_H_ */
 diff --git a/drivers/media/platform/verisilicon/hantro_drv.c b/drivers/media/platform/verisilicon/hantro_drv.c
-index 2e81877..c60e97b 100644
+index 2e81877..9ce548f 100644
 --- a/drivers/media/platform/verisilicon/hantro_drv.c
 +++ b/drivers/media/platform/verisilicon/hantro_drv.c
-@@ -97,6 +97,37 @@ static void hantro_job_finish(struct hantro_dev *vpu,
+@@ -97,6 +97,44 @@ static void hantro_job_finish(struct hantro_dev *vpu,
  	hantro_job_finish_no_pm(vpu, ctx, result);
  }
  
-+static void hantro_job_done(struct hantro_dev *vpu, struct hantro_ctx *ctx,
-+			    enum vb2_buffer_state result)
++static enum vb2_buffer_state
++hantro_job_done(struct hantro_dev *vpu, struct hantro_ctx *ctx,
++		enum vb2_buffer_state result)
 +{
 +	struct vb2_v4l2_buffer *src_buf;
 +
 +	src_buf = hantro_get_src_buf(ctx);
++
++	if (result == VB2_BUF_STATE_DONE && ctx->is_encoder &&
++	    ctx->vpu_dst_fmt->codec_mode == HANTRO_MODE_H264_ENC &&
++	    rk3399_vpu_h264_enc_check_result(ctx))
++		result = VB2_BUF_STATE_ERROR;
 +
 +	if (result == VB2_BUF_STATE_DONE && ctx->codec_ops->done)
 +		ctx->codec_ops->done(ctx);
@@ -122,6 +128,7 @@ index 2e81877..c60e97b 100644
 +	if (ctx->is_encoder)
 +		v4l2_ctrl_request_complete(src_buf->vb2_buf.req_obj.req,
 +					   &ctx->ctrl_handler);
++	return result;
 +}
 +
 +void hantro_thread_done(struct hantro_dev *vpu, enum vb2_buffer_state result)
@@ -135,7 +142,7 @@ index 2e81877..c60e97b 100644
 +	 * and will take care of finishing the job.
 +	 */
 +	if (cancel_delayed_work(&vpu->watchdog_work)) {
-+		hantro_job_done(vpu, ctx, result);
++		result = hantro_job_done(vpu, ctx, result);
 +		hantro_job_finish(vpu, ctx, result);
 +	}
 +}
@@ -143,7 +150,7 @@ index 2e81877..c60e97b 100644
  void hantro_irq_done(struct hantro_dev *vpu,
  		     enum vb2_buffer_state result)
  {
-@@ -131,6 +162,13 @@ void hantro_watchdog(struct work_struct *work)
+@@ -131,6 +169,13 @@ void hantro_watchdog(struct work_struct *work)
  	}
  }
  
@@ -157,7 +164,7 @@ index 2e81877..c60e97b 100644
  void hantro_start_prepare_run(struct hantro_ctx *ctx)
  {
  	struct vb2_v4l2_buffer *src_buf;
-@@ -162,9 +200,7 @@ void hantro_end_prepare_run(struct hantro_ctx *ctx)
+@@ -162,9 +207,7 @@ void hantro_end_prepare_run(struct hantro_ctx *ctx)
  	v4l2_ctrl_request_complete(src_buf->vb2_buf.req_obj.req,
  				   &ctx->ctrl_handler);
  
@@ -168,7 +175,7 @@ index 2e81877..c60e97b 100644
  }
  
  static void device_run(void *priv)
-@@ -224,6 +260,7 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
+@@ -224,6 +267,7 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
  	src_vq->dev = ctx->dev->v4l2_dev.dev;
  	src_vq->supports_requests = true;
  
@@ -176,7 +183,7 @@ index 2e81877..c60e97b 100644
  	ret = vb2_queue_init(src_vq);
  	if (ret)
  		return ret;
-@@ -244,7 +281,8 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
+@@ -244,7 +288,8 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
  	dst_vq->io_modes = VB2_MMAP | VB2_DMABUF;
  	dst_vq->drv_priv = ctx;
  	dst_vq->ops = &hantro_queue_ops;
@@ -186,7 +193,7 @@ index 2e81877..c60e97b 100644
  	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
  	dst_vq->lock = &ctx->dev->vpu_mutex;
  	dst_vq->dev = ctx->dev->v4l2_dev.dev;
-@@ -439,6 +477,23 @@ static const struct hantro_ctrl controls[] = {
+@@ -439,6 +484,23 @@ static const struct hantro_ctrl controls[] = {
  			 */
  			.flags = V4L2_CTRL_FLAG_READ_ONLY,
  		},
@@ -210,7 +217,7 @@ index 2e81877..c60e97b 100644
  	}, {
  		.codec = HANTRO_MPEG2_DECODER,
  		.cfg = {
-@@ -1181,9 +1236,15 @@ static int hantro_probe(struct platform_device *pdev)
+@@ -1181,9 +1243,15 @@ static int hantro_probe(struct platform_device *pdev)
  		if (irq < 0)
  			return irq;
  
@@ -1040,10 +1047,10 @@ index 2414782..0cc7131 100644
 +}
 diff --git a/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h b/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h
 new file mode 100644
-index 0000000..ac24fd1
+index 0000000..4ae5a01
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,54 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +#ifndef HANTRO_H264_ENC_VALIDATE_H
 +#define HANTRO_H264_ENC_VALIDATE_H
@@ -1079,9 +1086,27 @@ index 0000000..ac24fd1
 +		return -EINVAL;
 +	return 0;
 +}
++/* The prototype reads this register as a bit count. Until hardware validation,
++ * reject partial bytes rather than silently rounding or exposing excess data.
++ * This bounds the reported payload; it cannot prove DMA respected its limit.
++ */
++static inline int hantro_h264_enc_payload_size(unsigned int bits,
++					     unsigned long capacity,
++					     unsigned int *bytes_used)
++{
++	if (!bytes_used)
++		return -EINVAL;
++	*bytes_used = 0;
++	if (bits % 8)
++		return -EINVAL;
++	if (bits / 8 > capacity)
++		return -ENOSPC;
++	*bytes_used = bits / 8;
++	return 0;
++}
 +#endif
 diff --git a/drivers/media/platform/verisilicon/hantro_hw.h b/drivers/media/platform/verisilicon/hantro_hw.h
-index 13e573f..3c31c1f 100644
+index 13e573f..d34ddba 100644
 --- a/drivers/media/platform/verisilicon/hantro_hw.h
 +++ b/drivers/media/platform/verisilicon/hantro_hw.h
 @@ -11,6 +11,7 @@
@@ -1118,7 +1143,7 @@ index 13e573f..3c31c1f 100644
  /* Max. number of entries in the DPB (HW limitation). */
  #define HANTRO_H264_DPB_SIZE		16
  
-@@ -440,6 +460,16 @@ int rockchip_vpu2_jpeg_enc_run(struct hantro_ctx *ctx);
+@@ -440,6 +460,17 @@ int rockchip_vpu2_jpeg_enc_run(struct hantro_ctx *ctx);
  void hantro_h1_jpeg_enc_done(struct hantro_ctx *ctx);
  void rockchip_vpu2_jpeg_enc_done(struct hantro_ctx *ctx);
  
@@ -1127,6 +1152,7 @@ index 13e573f..3c31c1f 100644
 +unsigned int hantro_h264_enc_rec_image_size(unsigned int width,
 +					    unsigned int height);
 +int hantro_h264_enc_prepare_run(struct hantro_ctx *ctx);
++int rk3399_vpu_h264_enc_check_result(struct hantro_ctx *ctx);
 +void rk3399_vpu_h264_enc_done(struct hantro_ctx *ctx);
 +int rk3399_vpu_h264_enc_run(struct hantro_ctx *ctx);
 +int hantro_h264_enc_init(struct hantro_ctx *ctx);
@@ -1136,10 +1162,46 @@ index 13e573f..3c31c1f 100644
  				   unsigned int dpb_idx);
  u16 hantro_h264_get_ref_nbr(struct hantro_ctx *ctx,
 diff --git a/drivers/media/platform/verisilicon/hantro_v4l2.c b/drivers/media/platform/verisilicon/hantro_v4l2.c
-index 83af9fa..f1eb818 100644
+index 83af9fa..15a2470 100644
 --- a/drivers/media/platform/verisilicon/hantro_v4l2.c
 +++ b/drivers/media/platform/verisilicon/hantro_v4l2.c
-@@ -858,6 +858,31 @@ hantro_buf_plane_check(struct vb2_buffer *vb,
+@@ -551,10 +551,11 @@ static int hantro_set_fmt_out(struct hantro_ctx *ctx,
+ 		}
+ 	} else {
+ 		/*
+-		 * The encoder doesn't admit a format change if
+-		 * there are OUTPUT buffers allocated.
++		 * CAPTURE buffers own reconstruction storage sized from OUTPUT.
++		 * Neither format can change while either queue owns buffers.
+ 		 */
+-		if (vb2_is_busy(vq))
++		if (vb2_is_busy(vq) ||
++		    vb2_is_busy(v4l2_m2m_get_dst_vq(ctx->fh.m2m_ctx)))
+ 			return -EBUSY;
+ 	}
+ 
+@@ -599,16 +600,13 @@ static int hantro_set_fmt_cap(struct hantro_ctx *ctx,
+ 		struct vb2_queue *peer_vq;
+ 
+ 		/*
+-		 * Since format change on the CAPTURE queue will reset
+-		 * the OUTPUT queue, we can't allow doing so
+-		 * when the OUTPUT queue has buffers allocated.
++		 * CAPTURE format changes also reset OUTPUT. Keep the format
++		 * and reconstruction allocation consistent on both queues.
+ 		 */
+ 		peer_vq = v4l2_m2m_get_vq(ctx->fh.m2m_ctx,
+ 					  V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
+-		if (vb2_is_busy(peer_vq) &&
+-		    (pix_mp->pixelformat != ctx->dst_fmt.pixelformat ||
+-		     pix_mp->height != ctx->dst_fmt.height ||
+-		     pix_mp->width != ctx->dst_fmt.width))
++		if (vb2_is_busy(peer_vq) ||
++		    vb2_is_busy(v4l2_m2m_get_dst_vq(ctx->fh.m2m_ctx)))
+ 			return -EBUSY;
+ 	}
+ 
+@@ -858,6 +856,32 @@ hantro_buf_plane_check(struct vb2_buffer *vb,
  	return 0;
  }
  
@@ -1152,7 +1214,8 @@ index 83af9fa..f1eb818 100644
 +	struct hantro_enc_buf *enc_buf;
 +	struct hantro_aux_buf *rec_buf;
 +
-+	if (!ctx->is_encoder || V4L2_TYPE_IS_OUTPUT(vq->type))
++	if (!ctx->is_encoder || V4L2_TYPE_IS_OUTPUT(vq->type) ||
++	    ctx->vpu_dst_fmt->codec_mode != HANTRO_MODE_H264_ENC)
 +		return 0;
 +
 +	enc_buf = hantro_get_enc_buf(vbuf);
@@ -1171,7 +1234,7 @@ index 83af9fa..f1eb818 100644
  static int hantro_buf_prepare(struct vb2_buffer *vb)
  {
  	struct vb2_queue *vq = vb->vb2_queue;
-@@ -911,6 +936,24 @@ static void hantro_buf_queue(struct vb2_buffer *vb)
+@@ -911,6 +935,29 @@ static void hantro_buf_queue(struct vb2_buffer *vb)
  	v4l2_m2m_buf_queue(ctx->fh.m2m_ctx, vbuf);
  }
  
@@ -1190,13 +1253,18 @@ index 83af9fa..f1eb818 100644
 +	enc_buf = hantro_get_enc_buf(vbuf);
 +	rec_buf = &enc_buf->rec_buf;
 +
-+	dma_free_coherent(vpu->dev, rec_buf->size, rec_buf->cpu, rec_buf->dma);
++	if (rec_buf->cpu)
++		dma_free_coherent(vpu->dev, rec_buf->size, rec_buf->cpu,
++				  rec_buf->dma);
++	rec_buf->cpu = NULL;
++	rec_buf->dma = 0;
++	rec_buf->size = 0;
 +}
 +
  static bool hantro_vq_is_coded(struct vb2_queue *q)
  {
  	struct hantro_ctx *ctx = vb2_get_drv_priv(q);
-@@ -1022,6 +1065,8 @@ static int hantro_buf_out_validate(struct vb2_buffer *vb)
+@@ -1022,6 +1069,8 @@ static int hantro_buf_out_validate(struct vb2_buffer *vb)
  
  const struct vb2_ops hantro_queue_ops = {
  	.queue_setup = hantro_queue_setup,
@@ -1455,10 +1523,10 @@ index 02673be..5b7f6f8 100644
  	.num_irqs = ARRAY_SIZE(rk3568_vepu_irqs),
 diff --git a/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
 new file mode 100644
-index 0000000..242717b
+index 0000000..e87e29e
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
-@@ -0,0 +1,492 @@
+@@ -0,0 +1,514 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Hantro VPU codec driver
@@ -1472,6 +1540,7 @@ index 0000000..242717b
 +#include "hantro.h"
 +#include "hantro_v4l2.h"
 +#include "hantro_hw.h"
++#include "hantro_h264_enc_validate.h"
 +#include "rockchip_vpu2_regs.h"
 +
 +/* H.264 motion estimation parameters */
@@ -1551,6 +1620,21 @@ index 0000000..242717b
 +}
 +#endif
 +
++int rk3399_vpu_h264_enc_check_result(struct hantro_ctx *ctx)
++{
++	struct vb2_v4l2_buffer *dst = hantro_get_dst_buf(ctx);
++	unsigned int bytes_used;
++	int ret;
++
++	if (!dst)
++		return -EINVAL;
++	ret = hantro_h264_enc_payload_size(
++		vepu_read(ctx->dev, VEPU_REG_STR_BUF_LIMIT),
++		vb2_plane_size(&dst->vb2_buf, 0), &bytes_used);
++	vb2_set_plane_payload(&dst->vb2_buf, 0, bytes_used);
++	return ret;
++}
++
 +void rk3399_vpu_h264_enc_done(struct hantro_ctx *ctx)
 +{
 +	struct hantro_dev *vpu = ctx->dev;
@@ -1560,7 +1644,6 @@ index 0000000..242717b
 +	unsigned int i;
 +	u32 cp_overflow = 0;
 +	u32 cp_prev = 0;
-+	u32 bytesused;
 +
 +	ctrl = v4l2_ctrl_find(&ctx->ctrl_handler,
 +			      V4L2_CID_STATELESS_H264_ENCODE_FEEDBACK);
@@ -1570,9 +1653,6 @@ index 0000000..242717b
 +	dst_buf = hantro_get_dst_buf(ctx);
 +	if (!dst_buf)
 +		return;
-+
-+	bytesused = vepu_read(vpu, VEPU_REG_STR_BUF_LIMIT) / 8;
-+	dst_buf->vb2_buf.planes[0].bytesused = bytesused;
 +
 +	encode_feedback.qp_sum =
 +		VEPU_REG_QP_SUM(vepu_read(vpu, VEPU_REG_QP_SUM_DIV2));
@@ -1628,6 +1708,8 @@ index 0000000..242717b
 +
 +	src_buf = hantro_get_src_buf(ctx);
 +	dst_buf = hantro_get_dst_buf(ctx);
++	if (!src_buf || !dst_buf)
++		return -EINVAL;
 +
 +	enc_buf = hantro_get_enc_buf(dst_buf);
 +	rec_buf = &enc_buf->rec_buf;
@@ -1636,6 +1718,11 @@ index 0000000..242717b
 +	ret = hantro_h264_enc_prepare_run(ctx);
 +	if (ret)
 +		return ret;
++
++	/* Defense in depth if an allocation/format invariant is broken. */
++	if (!rec_buf->cpu || rec_buf->size <
++	    hantro_h264_enc_rec_image_size(src_fmt->width, src_fmt->height))
++		return -EINVAL;
 +
 +	encode_params = ctrls->encode;
 +	encode_rc = ctrls->rc;
@@ -1710,12 +1797,15 @@ index 0000000..242717b
 +
 +		reference_ts = encode_params->reference_ts;
 +		buf = vb2_find_buffer(queue, reference_ts);
-+		if (!buf)
++		if (!buf || buf == &dst_buf->vb2_buf)
 +			return -EINVAL;
 +
 +		ref_buf = to_vb2_v4l2_buffer(buf);
 +		enc_buf = hantro_get_enc_buf(ref_buf);
 +		rec_buf = &enc_buf->rec_buf;
++		if (!rec_buf->cpu || rec_buf->size <
++		    hantro_h264_enc_rec_image_size(src_fmt->width, src_fmt->height))
++			return -EINVAL;
 +
 +		reg = rec_buf->dma;
 +		vepu_write(vpu, reg, VEPU_REG_ADDR_REF_LUMA);

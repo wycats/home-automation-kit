@@ -4,6 +4,13 @@ on:
     paths:
       - 'experiments/rk3568-encoder/**'
       - '.github/workflows/encoder-compile.yml'
+      - 'src/encoder_lab/**'
+      - 'src/encoder_lab.rs'
+      - 'src/bin/encoder-lab.rs'
+      - 'tests/encoder_fixture.py'
+      - 'src/lib.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,6 +18,19 @@ concurrency:
   group: rk3568-encoder-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  client-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: rustup update stable && rustup default stable
+      - name: Install independent decoder on ephemeral runner
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+      - run: cargo build --locked --bin encoder-lab
+      - name: Decode synthetic vectors and compare every visible pixel
+        run: python3 tests/encoder_fixture.py "$PWD/target/debug/encoder-lab" ffmpeg
   compile:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 35
