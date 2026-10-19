@@ -2,7 +2,9 @@
 
 Date: 2026-10-19. Scope: isolated compile-only candidate; no device execution.
 
-The candidate is **not ready for a hardware client**. Narrow allocation and payload guards are implemented, but IRQ/watchdog job ownership, request-error cleanup, and reconstruction validity remain unresolved. Successful compilation or the pure helper tests do not close those gates.
+The candidate is **not ready for a hardware client**. Narrow allocation and payload guards are implemented, but IRQ/watchdog job ownership, asynchronous request cleanup, and reconstruction validity remain unresolved. Successful compilation or the pure helper tests do not close those gates.
+
+Update: [PRESTART-CLEANUP.md](PRESTART-CLEANUP.md) supersedes the synchronous rejection findings below. [IRQ-DISPATCH.md](IRQ-DISPATCH.md) records restoration of JPEG's original hard-IRQ path and conservative H.264 error-status precedence. The detailed findings and line numbers below preserve the earlier patch snapshot identified by its hash; they are not a claim that those two fixes remain absent.
 
 ## Reviewed inputs and line references
 

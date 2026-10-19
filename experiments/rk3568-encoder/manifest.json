@@ -23,6 +23,6 @@
   },
   "patch": {
     "path": "patches/hantro-h264-7.2.11.patch",
-    "sha256": "e07221b18ddf1b6898d5abad42f1f6e3e134e3a21396a0d61a6202daf0080aab"
+    "sha256": "7504ef8139bcfb727e389ed86f82febeed5098a01fc7979eac0afd00d71bb7a2"
   }
 }

@@ -40,6 +40,13 @@ gcc -Wall -Wextra -Werror -fsanitize=address,undefined -g \
   -I"$work/uapi/include" -I"$work/linux/drivers/media/platform/verisilicon" \
   "$packet/validation_test.c" -o "$work/validation-test"
 "$work/validation-test" > "$report/validation-tests.txt" 2>&1
+python3 "$packet/prestart_test.py" --kernel "$work/linux" --uapi "$work/uapi/include" \
+  --report "$work/prestart" --cc gcc --sanitize > "$report/prestart-tests.txt" 2>&1
+mkdir -p "$report/prestart"
+cp "$work/prestart/results.json" "$work/prestart/prestart_subject.inc" "$report/prestart/"
+python3 "$packet/irq_dispatch_test.py" "$work/linux" "$work/irq-status-test" \
+  --sanitize > "$report/irq-status-tests.txt" 2>&1
+cp "$work/irq-status-test/result.json" "$report/irq-status-result.json"
 git init "$work/client"
 git -C "$work/client" fetch --depth=1 "$(value client repository)" "$(value client commit)"
 git -C "$work/client" checkout --detach FETCH_HEAD
