@@ -2,17 +2,23 @@ use home_automation_kit::{video_staging, video_worker};
 use std::{
     fs,
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 use video_staging::{Segment, stage_selection};
 use video_worker::Selection;
 
 fn temp() -> PathBuf {
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
     let id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("video-staging-{}-{id}", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "video-staging-{}-{id}-{}",
+        std::process::id(),
+        NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+    ));
     fs::create_dir_all(&path).unwrap();
     path
 }
