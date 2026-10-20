@@ -184,3 +184,51 @@ fn synthetic_real_conversion_and_saved_copy() {
     assert!(store.media_path(&job.id, true).unwrap().exists());
     fs::remove_dir_all(store.config.root.parent().unwrap()).unwrap();
 }
+
+#[test]
+#[ignore = "requires real FFmpeg/ffprobe; mandatory in synthetic-media CI"]
+fn synthetic_4k_hevc_becomes_1080p_h264_without_inventing_audio() {
+    let mut config = fixture().config;
+    config.ffmpeg = PathBuf::from(std::env::var("VIDEO_TEST_FFMPEG").unwrap());
+    config.ffprobe = PathBuf::from(std::env::var("VIDEO_TEST_FFPROBE").unwrap());
+    config.deadline_seconds = 90;
+    let source = &mut config.sources[0];
+    assert!(
+        std::process::Command::new(&config.ffmpeg)
+            .args([
+                "-nostdin",
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=3840x2160:rate=5",
+                "-t",
+                "3",
+                "-c:v",
+                "libx265",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "28",
+                "-x265-params",
+                "pools=1:frame-threads=1:log-level=error",
+                "-an"
+            ])
+            .arg(&source.path)
+            .status()
+            .unwrap()
+            .success()
+    );
+    source.sha256 = sha256(&source.path).unwrap();
+    let store = Store::open(config).unwrap();
+    let job = store.submit(request()).unwrap();
+    let ready = store.run(&job.id).unwrap();
+    assert_eq!(ready.state, State::Ready, "{:?}", ready.error);
+    let media = ready.media.unwrap();
+    assert_eq!((media.width, media.height), (1920, 1080));
+    assert!(!media.audio);
+    assert!((media.duration_ms as i64 - 2000).abs() <= 150);
+    fs::remove_dir_all(store.config.root.parent().unwrap()).unwrap();
+}

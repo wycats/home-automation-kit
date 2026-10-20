@@ -147,10 +147,14 @@ python3 tests/video_worker_http.py
 node web/review-worker.test.mjs
 ```
 
-The Linux CI media job requires real FFmpeg. It checks a non-keyframe trim using
+The Linux CI media job requires real FFmpeg. It converts a synthetic 4K HEVC
+source to 1080p H.264 without inventing audio, and checks a non-keyframe trim using
 decoded frame comparison and frame count, audio timing, save/reopen hash,
 authenticated byte ranges, running-process cancellation/retry and deadline
-reaping. Fixtures are generated colors/patterns and a sine tone.
+reaping. A real Chromium session prepares, plays, seeks, saves, reopens and
+restores a synthetic clip through the worker using a test-only same-origin
+bridge. This does not qualify the future HA authentication proxy.
+Fixtures are generated colors/patterns and a sine tone.
 `web/review-worker.browser.cjs` uses an existing Playwright installation to test
 the UI with mocked API/media. `REVIEW_CARD_SOURCE` optionally points at the
 private current review card to exercise the real integration seam.

@@ -35,4 +35,21 @@ state='cancelled';await session.refresh();assert.equal(session.job.state,'cancel
 assert.throws(()=>sameOriginTransport('http://worker:8787',()=>{}));
 assert.throws(()=>sameOriginTransport('//evil',()=>{}));
 assert.throws(()=>sameOriginTransport('/worker',()=>{}).mediaUrl('../x'));
+const restores=[];
+const restored=new ReviewSession({...transport,request:async(path,body)=>{
+  restores.push({path,body});return {id,state:'ready'};
+}});
+restored.select(selection);await restored.restore();
+assert.equal(restored.job.id,id);
+assert.deepEqual(restores.map(c=>c.path),['/jobs/lookup']);
+assert.equal(restores[0].body.source,'fixture');
+await restored.save('   ');
+assert.equal(restores.length,1);
+assert.match(restored.message,/Give this clip a name/);
+// An old lookup must not restore footage into the newly selected moment.
+let finishLookup;
+const moving=new ReviewSession({...transport,request:()=>new Promise(r=>finishLookup=r)});
+moving.select(selection);const looking=moving.restore();await Promise.resolve();
+moving.select({...selection,end_ms:14000});finishLookup({id,state:'ready'});await looking;
+assert.equal(moving.job,null);
 console.log('Review preparation/save separation, stale navigation, cancellation and transport tests passed');

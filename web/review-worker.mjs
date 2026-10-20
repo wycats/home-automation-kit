@@ -76,6 +76,9 @@ export class ReviewSession {
   }
   async save(name) {
     if (this.busy || this.job?.state !== 'ready') return;
+    if (!name.trim()) {
+      this.message = 'Give this clip a name before saving.'; this.onChange(this); return;
+    }
     const generation = this.generation, id = this.job.id;
     this.busy = true; this.message = 'Saving your clip…'; this.onChange(this);
     try {
