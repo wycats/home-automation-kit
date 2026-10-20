@@ -1,0 +1,18 @@
+#!/bin/busybox sh
+# Diagnostic RAM root. No networking, persistent mounts or automatic decoder test.
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+mount -t proc proc /proc || exec sh
+mount -t sysfs sysfs /sys || exec sh
+mount -t devtmpfs devtmpfs /dev || exec sh
+mount -t tmpfs -o mode=1777 tmpfs /tmp || exec sh
+mount -t tmpfs tmpfs /run || exec sh
+echo
+echo 'ODROID-M1 decoder laboratory — RAM root, manual tests only'
+echo 'No production storage is mounted. Network services are disabled.'
+echo 'Use the serial console; HDMI drivers are not loaded automatically.'
+echo 'Read /README.txt before loading the decoder or running fixtures.'
+while true; do
+    setsid cttyhack sh
+    echo 'Shell exited. Power off physically to restore the original boot medium.'
+    sleep 1
+done

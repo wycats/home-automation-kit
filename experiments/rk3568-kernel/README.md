@@ -51,9 +51,12 @@ The 180-minute deadline is a guard, not a promised build duration. No preinstall
 runner tools are deleted to make space. If the preflight fails, choose a builder
 with adequate resources.
 
-Artifacts are limited to logs, resolved public configuration, environment
-versions, Image, DTB and module hashes. The entire build tree is deliberately
-excluded because it can contain a generated module-signing private key.
+Artifacts include logs, resolved public configuration, environment versions,
+Image, DTB and a separate matching module/UAPI payload built by `package.sh`.
+The entire build tree is deliberately excluded because it can contain a
+generated module-signing private key. See the
+[diagnostic payload](../rk3568-diagnostic/README.md) for userspace and RAM-root
+assembly; it still requires bootloader packaging and hardware testing.
 
 ## What passing means
 
