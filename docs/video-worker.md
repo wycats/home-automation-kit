@@ -74,6 +74,7 @@ access and a dedicated saved-clips share, not general NAS write access.
 | Route | Meaning |
 | --- | --- |
 | `GET /health` | Backend/service identity |
+| `POST /sources/resolve` | Resolve `{camera,start_ms,end_ms}` against staged coverage |
 | `POST /jobs` | Submit `{source,camera,start_ms,end_ms,profile}` |
 | `POST /jobs/lookup` | Same selection: find an existing job without submitting |
 | `GET /jobs`, `GET /jobs/{id}` | Persisted status |
@@ -118,7 +119,9 @@ cache jobs offline, and never apply cache cleanup to the saved root.
 * `request(path, body?)`: authenticated job/library requests.
 * `mediaUrl(id, saved)`: authenticated, range-capable playback URL.
 
-The same-origin helper assumes a **real authenticated host proxy**; its custom
+The same-origin helper resolves against the staged catalog by default; a host
+can supply a resolver that stages missing footage first. It assumes a
+**real authenticated host proxy**; its custom
 header is a cross-origin-request guard, not an authentication or CSRF-token
 implementation. The proxy must verify the user's existing HA session and camera
 access on every operation, reject untrusted origins, retain worker credentials

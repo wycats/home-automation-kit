@@ -54,6 +54,14 @@ pub struct ClipRequest {
     pub profile: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Selection {
+    pub camera: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
@@ -234,6 +242,31 @@ impl Store {
             return Ok(Some(self.get(&id)?));
         }
         Ok(None)
+    }
+
+    pub fn resolve(&self, selection: &Selection) -> Result<String> {
+        // Deterministic choice of the smallest covering immutable staged file.
+        let mut sources: Vec<_> = self
+            .config
+            .sources
+            .iter()
+            .filter(|source| {
+                self.source(&ClipRequest {
+                    source: source.id.clone(),
+                    camera: selection.camera.clone(),
+                    start_ms: selection.start_ms,
+                    end_ms: selection.end_ms,
+                    profile: PROFILE.into(),
+                })
+                .is_ok()
+            })
+            .collect();
+        sources.sort_by_key(|source| (source.end_ms - source.start_ms, &source.id));
+        Ok(sources
+            .first()
+            .ok_or("selection has no contiguous staged coverage")?
+            .id
+            .clone())
     }
 
     pub fn submit(&self, request: ClipRequest) -> Result<Job> {

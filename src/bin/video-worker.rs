@@ -1,6 +1,6 @@
 //! Loopback-only experimental worker. A future authenticated HA adapter resolves
 //! recording selections to staged source IDs; this server never opens LAN access.
-use home_automation_kit::video_worker::{ClipRequest, Config, Result, State, Store};
+use home_automation_kit::video_worker::{ClipRequest, Config, Result, Selection, State, Store};
 use serde::Deserialize;
 use std::{
     env,
@@ -149,6 +149,9 @@ fn handle(mut request: Request, store: &Store, token: &str, streams: &Arc<Atomic
             serde_json::json!({"service":"video-worker","version":1,"backend":store.config.backend}),
         ),
         (&Method::Get, ["jobs"]) => Ok(serde_json::to_value(store.jobs()?)?),
+        (&Method::Post, ["sources", "resolve"]) => Ok(serde_json::json!({
+            "source":store.resolve(&body::<Selection>(&mut request)?)?
+        })),
         (&Method::Post, ["jobs"]) => Ok(serde_json::to_value(
             store.submit(body::<ClipRequest>(&mut request)?)?,
         )?),

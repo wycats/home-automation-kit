@@ -93,8 +93,8 @@ export class ReviewSession {
 export function sameOriginTransport(base, resolve) {
   if (!base.startsWith('/') || base.startsWith('//') || /[?#\\]/.test(base))
     throw Error('Authenticated same-origin worker route required');
-  return {
-    resolve,
+  const transport = {
+    resolve: resolve || (async selection => (await transport.request('/sources/resolve',selection)).source),
     async request(path, body) {
       const response = await fetch(base + path, {
         method: body === undefined ? 'GET' : 'POST',
@@ -111,6 +111,7 @@ export function sameOriginTransport(base, resolve) {
       return `${base}/${saved ? 'clips' : 'jobs'}/${id}/media`;
     }
   };
+  return transport;
 }
 
 if (typeof HTMLElement !== 'undefined') {

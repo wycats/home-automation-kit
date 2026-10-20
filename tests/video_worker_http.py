@@ -98,6 +98,7 @@ def main():
                 assert e.code == 401
             selection = dict(source="synthetic", camera="fixture", start_ms=11100,
                              end_ms=13200, profile="browser-1080p-v1")
+            assert data("/sources/resolve",{k:selection[k] for k in ("camera","start_ms","end_ms")}) == {"source":"synthetic"}
             assert data("/jobs/lookup", selection) is None
             assert data("/jobs") == []
             job = data("/jobs", selection)
@@ -138,6 +139,9 @@ def main():
             assert max(starts)-min(starts) < .050
             for s in info["streams"]:
                 assert abs(float(s["duration"])-2.1) < .150
+            if os.environ.get("VIDEO_TEST_BROWSER") == "1":
+                subprocess.run(["node", "tests/video_worker_browser.cjs"], check=True, timeout=90,
+                    env={**os.environ,"VIDEO_TEST_BASE":base,"VIDEO_TEST_TOKEN":token})
             # Changed source identity is rejected, never recycled into another clip.
             source.write_bytes(b"changed source")
             changed = data("/jobs",{**selection,"start_ms":14000,"end_ms":16000})
