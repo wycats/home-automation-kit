@@ -23,6 +23,12 @@
   },
   "patch": {
     "path": "patches/hantro-h264-7.2.11.patch",
-    "sha256": "fa68879fab040098d80d1d7bc5ce53ab25e87f4e292fdbb6fcab33db52c61e50"
+    "sha256": "fe712fb7e0451b333e060c9b38efc5a3a052ac763a80caab0108500b9eb7bc05"
+  },
+  "teardown_backport": {
+    "repository": "https://git.linuxtv.org/media.git",
+    "commit": "8e26d4c20ed218db6c3123480a4a4e2545680566",
+    "author": "Tharit Tangkijwanichakul",
+    "scope": "Runtime PM before reset on probe unwind and remove; not DMA recovery"
   }
 }

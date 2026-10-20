@@ -4,6 +4,7 @@ Subject: [EXPERIMENT] Rebase Hantro H.264 encoder prototype onto Linux 7.2.11
 Compile-only adaptation of Paul Kocialkowski (Bootlin) and Michael Grzeschik
 (Pengutronix) work at d0897ac6844c86a8d8d6f90d4116eb068184010c.
 Original commits/sign-offs are listed in manifest.json and NOTICE.md.
+Includes upstream teardown fix 8e26d4c20ed2 by Tharit Tangkijwanichakul.
 Not submitted upstream; not qualified for hardware execution. GPL-2.0.
 
 ---
@@ -126,7 +127,7 @@ index 0353de1..0a095fe 100644
 +
  #endif /* HANTRO_H_ */
 diff --git a/drivers/media/platform/verisilicon/hantro_drv.c b/drivers/media/platform/verisilicon/hantro_drv.c
-index 2e81877..2b0667c 100644
+index 2e81877..e7f1c9a 100644
 --- a/drivers/media/platform/verisilicon/hantro_drv.c
 +++ b/drivers/media/platform/verisilicon/hantro_drv.c
 @@ -97,6 +97,152 @@ static void hantro_job_finish(struct hantro_dev *vpu,
@@ -500,6 +501,39 @@ index 2e81877..2b0667c 100644
  		if (ret) {
  			dev_err(vpu->dev, "Could not request %s IRQ.\n",
  				irq_name);
+@@ -1212,7 +1502,7 @@ static int hantro_probe(struct platform_device *pdev)
+ 	ret = clk_bulk_prepare(vpu->variant->num_clocks, vpu->clocks);
+ 	if (ret) {
+ 		dev_err(&pdev->dev, "Failed to prepare clocks\n");
+-		goto err_rst_assert;
++		goto err_pm_disable_assert_reset;
+ 	}
+ 
+ 	ret = v4l2_device_register(&pdev->dev, &vpu->v4l2_dev);
+@@ -1266,8 +1556,11 @@ err_v4l2_unreg:
+ 	v4l2_device_unregister(&vpu->v4l2_dev);
+ err_clk_unprepare:
+ 	clk_bulk_unprepare(vpu->variant->num_clocks, vpu->clocks);
+-err_rst_assert:
++err_pm_disable_assert_reset:
++	pm_runtime_dont_use_autosuspend(vpu->dev);
++	pm_runtime_disable(vpu->dev);
+ 	reset_control_assert(vpu->resets);
++	return ret;
+ err_pm_disable:
+ 	pm_runtime_dont_use_autosuspend(vpu->dev);
+ 	pm_runtime_disable(vpu->dev);
+@@ -1287,9 +1580,9 @@ static void hantro_remove(struct platform_device *pdev)
+ 	v4l2_m2m_put(vpu->m2m_dev);
+ 	v4l2_device_unregister(&vpu->v4l2_dev);
+ 	clk_bulk_unprepare(vpu->variant->num_clocks, vpu->clocks);
+-	reset_control_assert(vpu->resets);
+ 	pm_runtime_dont_use_autosuspend(vpu->dev);
+ 	pm_runtime_disable(vpu->dev);
++	reset_control_assert(vpu->resets);
+ }
+ 
+ #ifdef CONFIG_PM
 diff --git a/drivers/media/platform/verisilicon/hantro_h1_regs.h b/drivers/media/platform/verisilicon/hantro_h1_regs.h
 index 8650cc4..1f261af 100644
 --- a/drivers/media/platform/verisilicon/hantro_h1_regs.h

@@ -3,6 +3,10 @@
 The maintained Rust client's device-free foundation and verification commands
 are in [CLIENT.md](CLIENT.md). Hardware execution remains disabled.
 
+The isolated tree includes an [upstream PM-before-reset teardown fix](RESET-ORDER.md)
+with tests of actual probe/remove paths. This corrects an ordering hazard and
+does not establish DMA quiescence.
+
 The kernel now also [rejects external H.264 jobs before hardware preparation](ADMISSION-BOUNDARY.md).
 The missing userspace backend alone was not a kernel safety boundary. There is
 no runtime bypass: an isolated image containing this candidate cannot exercise

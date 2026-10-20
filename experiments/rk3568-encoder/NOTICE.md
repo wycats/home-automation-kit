@@ -9,6 +9,10 @@ Michael Grzeschik. This rebase is a local experiment, not an upstream submission
 Existing source copyright and SPDX notices remain intact. Derived kernel code
 is GPL-2.0; see `../rk3568-kernel/LICENSES/GPL-2.0.txt`.
 
+The PM-before-reset teardown correction is by Tharit Tangkijwanichakul, from
+media.git commit `8e26d4c20ed218db6c3123480a4a4e2545680566`. Its upstream
+review/sign-off provenance and unchanged scope are described in RESET-ORDER.md.
+
 Original build orchestration and ABI probe are MIT. This entire directory is
 excluded from the Rust crate package, so its patches are not relabeled MIT.
 
