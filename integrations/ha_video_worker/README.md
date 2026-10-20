@@ -23,6 +23,9 @@ for the mapped camera. Job and saved-clip lists are filtered, and object
 operations re-fetch the object and check its camera on every request. Browser
 control requests must be same-origin and use the Home Assistant frontend API;
 cross-origin CORS is disabled.
+Jobs and saved clips are shared among authorized viewers of the same camera;
+there is no separate per-creator ownership policy. That explicit camera grant
+includes preparing, cancelling, retrying, saving and naming that camera's clips.
 
 The review component transport should use authenticated `hass.callApi` for
 control, for example `hass.callApi("POST", "ha_video_worker/control/jobs", …)` with only
@@ -37,12 +40,12 @@ An HTML video element cannot attach the usual HA bearer header. First call
 `kind: "jobs"` or `kind: "clips"`, then set the element source to the
 returned relative URL. Its five-minute lifetime supports longer clips and
 seeking; a copied URL is a bearer capability during that period. The bridge
-checks the current user's camera access and object ownership before minting it.
+checks the current user's camera access and the object's camera before minting it.
 It uses HA's `async_sign_path` for a five-minute URL bound to the object ID,
 camera and issuing user. HA's HTTP auth
 middleware validates the signature, expiration, and issuing refresh token and
 restores that HA user before the `requires_auth = True` media view runs. Media
-requests re-check user, camera, and object ownership, allow only one explicit
+requests re-check user, camera, and object identity, allow only one explicit
 byte range, and stream chunks without buffering the file.
 
 Control responses expose only reviewed fields; private source paths and raw
