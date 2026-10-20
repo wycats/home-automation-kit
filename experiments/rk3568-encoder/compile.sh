@@ -40,6 +40,14 @@ gcc -Wall -Wextra -Werror -fsanitize=address,undefined -g \
   -I"$work/uapi/include" -I"$work/linux/drivers/media/platform/verisilicon" \
   "$packet/validation_test.c" -o "$work/validation-test"
 "$work/validation-test" > "$report/validation-tests.txt" 2>&1
+python3 "$packet/teardown_test.py" "$work/linux" "$work/teardown-test" \
+  --sanitize > "$report/teardown-tests.txt" 2>&1
+mkdir -p "$report/teardown"
+cp "$work/teardown-test/result.json" "$work/teardown-test/teardown_subject.inc" "$report/teardown/"
+python3 "$packet/admission_test.py" "$work/linux" "$work/admission-test" \
+  --sanitize > "$report/admission-tests.txt" 2>&1
+mkdir -p "$report/admission"
+cp "$work/admission-test/result.json" "$work/admission-test/admission_subject.inc" "$report/admission/"
 python3 "$packet/prestart_test.py" --kernel "$work/linux" --uapi "$work/uapi/include" \
   --report "$work/prestart" --cc gcc --sanitize > "$report/prestart-tests.txt" 2>&1
 mkdir -p "$report/prestart"
@@ -47,6 +55,14 @@ cp "$work/prestart/results.json" "$work/prestart/prestart_subject.inc" "$report/
 python3 "$packet/irq_dispatch_test.py" "$work/linux" "$work/irq-status-test" \
   --sanitize > "$report/irq-status-tests.txt" 2>&1
 cp "$work/irq-status-test/result.json" "$report/irq-status-result.json"
+python3 "$packet/job_lifetime_test.py" "$work/linux" "$work/job-lifetime-test" \
+  --sanitize > "$report/job-lifetime-tests.txt" 2>&1
+mkdir -p "$report/job-lifetime"
+cp "$work/job-lifetime-test/result.json" "$work/job-lifetime-test/job_subject.inc" "$report/job-lifetime/"
+python3 "$packet/reference_test.py" "$work/linux" "$work/reference-test" \
+  --sanitize > "$report/reference-tests.txt" 2>&1
+mkdir -p "$report/reference"
+cp "$work/reference-test/result.json" "$work/reference-test/reference_subject.inc" "$report/reference/"
 git init "$work/client"
 git -C "$work/client" fetch --depth=1 "$(value client repository)" "$(value client commit)"
 git -C "$work/client" checkout --detach FETCH_HEAD

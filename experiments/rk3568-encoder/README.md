@@ -3,6 +3,30 @@
 The maintained Rust client's device-free foundation and verification commands
 are in [CLIENT.md](CLIENT.md). Hardware execution remains disabled.
 
+The isolated tree includes an [upstream PM-before-reset teardown fix](RESET-ORDER.md)
+with tests of actual probe/remove paths. This corrects an ordering hazard and
+does not establish DMA quiescence.
+
+The kernel now also [rejects external H.264 jobs before hardware preparation](ADMISSION-BOUNDARY.md).
+The missing userspace backend alone was not a kernel safety boundary. There is
+no runtime bypass: an isolated image containing this candidate cannot exercise
+H.264 until a reviewed DMA recovery contract replaces that admission gate.
+Internal preparatory/job functions remain compiled and tested offline.
+
+The previous contained follow-on qualifies H.264 status with the VEPU2 raw IRQ bit
+before acknowledging or claiming a job. Its 98 extracted-handler cases and the
+separate [DMA/reset boundary audit](DMA-RESET-BOUNDARY.md) keep that software
+correction distinct from hardware quiescence. No reset sequence is added.
+
+[Reconstruction eligibility](REFERENCE-VALIDITY.md) ensures that
+only final successful jobs publish references; requeue, cleanup and stream or
+error epochs withdraw them. A contained MMAP capture restriction keeps allocation
+changes out of streaming jobs. This extends [per-job callback ownership](JOB-LIFETIME.md): immutable
+H.264 job storage, one completion worker, a drained per-job watchdog, and an
+abort latch that also covers cancellation before `device_run`. Host tests exercise
+the actual candidate C paths. Physical IRQ/DMA quiescence and hardware reference
+surface correctness remain unresolved gates.
+
 Browser playback needs H.264 derivatives up to 1920x1080 while keeping original
 recordings. This isolates an encoder investigation from the decoder and RAM-root
 bundle. It does not modify those experiments, produce a boot image, load modules,
@@ -59,8 +83,10 @@ This is intentionally not included in the diagnostic initramfs yet. Review:
   bounds/error tests. Legacy control structs are not a stable upstream API.
 - DMA and buffers: reconstructed surface size/lifetime, capture capacity,
   bytes-used bounds, format changes, allocation failures and request cancellation.
-- IRQ/watchdog: threaded completion races, stream-off, null current context,
-  reset and repeated open/close. A compile pass proves none of these.
+- IRQ/watchdog: the callback-ownership candidate removes H.264's current-context
+  threaded completion and has host fault/race tests. Reset/DMA-idle guarantees,
+  late untagged device interrupts, level deassertion, suspend/removal and repeated
+  hardware sessions still need validation. A compile pass proves none of these.
 - Scope: imported code also changes shared Hantro paths. Restrict enablement and
   test JPEG/decoder regressions before combining with the decoder candidate.
 - Client: original program hardcodes 640x480/10 frames, discovers devices and
