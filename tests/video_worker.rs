@@ -2,17 +2,21 @@ use home_automation_kit::video_worker::*;
 use std::{
     fs,
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 fn fixture() -> Store {
+    // SystemTime can return the same value to parallel tests on Windows.
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
     let root = std::env::temp_dir().join(format!(
-        "clip-test-{}-{}",
+        "clip-test-{}-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
     ));
     Store::open(Config {
         root: root.join("preview"),

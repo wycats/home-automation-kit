@@ -121,6 +121,31 @@ export function sameOriginTransport(base, resolve) {
   return transport;
 }
 
+// Use HA's existing authenticated API client. The worker token never enters JS.
+export function homeAssistantTransport(hass) {
+  if (typeof hass?.callApi !== 'function') throw Error('Home Assistant API client required');
+  const transport = {
+    resolve: async selection => (await transport.request('/sources/resolve', selection)).source,
+    request(path, body) {
+      if (!/^\/(?:sources\/resolve|jobs(?:\/(?:lookup|[a-f0-9]{64})(?:\/(?:retry|cancel|save))?)?|clips(?:\/[a-f0-9]{64})?)$/.test(path))
+        throw Error('Unsupported review route');
+      const payload = body && ['/jobs','/jobs/lookup'].includes(path)
+        ? {camera:body.camera,start_ms:body.start_ms,end_ms:body.end_ms} : body;
+      return hass.callApi(body === undefined ? 'GET' : 'POST',
+        `ha_video_worker/control${path}`, payload);
+    },
+    async mediaUrl(id, saved = false) {
+      if (!/^[a-f0-9]{64}$/.test(id)) throw Error('Invalid clip identity');
+      const {url} = await hass.callApi('POST', 'ha_video_worker/media-url',
+        {kind:saved ? 'clips' : 'jobs', id});
+      if (typeof url !== 'string' || !url.startsWith('/api/ha_video_worker/media/') || /[\\\r\n]/.test(url))
+        throw Error('Invalid authenticated media path');
+      return url;
+    }
+  };
+  return transport;
+}
+
 if (typeof HTMLElement !== 'undefined') {
   class WorkerReview extends HTMLElement {
     constructor() {
@@ -136,6 +161,7 @@ if (typeof HTMLElement !== 'undefined') {
       </style><section aria-label="Playable moment">
         <div class="row"><button id="prepare">Prepare preview</button><button id="cancel" hidden>Stop preparation</button></div>
         <p id="status" role="status" aria-live="polite"></p><div id="player"></div>
+        <button id="reload" hidden>Reload playback</button>
         <small id="detail">Preparing a preview does not save a permanent clip.</small>
         <div class="row"><label>Clip name<input id="name" maxlength="120"></label><button id="save" disabled>Save clip</button></div>
         <p><button id="load">Open saved clips</button></p><div id="library"></div>
@@ -144,12 +170,17 @@ if (typeof HTMLElement !== 'undefined') {
       this.$('#cancel').onclick = () => this.session.cancel();
       this.$('#save').onclick = () => this.session.save(this.$('#name').value);
       this.$('#load').onclick = () => this.library();
+      this.$('#reload').onclick = () => {
+        if (this.playing) this.play(this.playing.id, this.playing.saved, true);
+      };
       this.$('#name').oninput = () => {
         try { sessionStorage.setItem(this.nameKey, this.$('#name').value); } catch { /* optional */ }
       };
     }
     $(selector) { return this.shadowRoot.querySelector(selector); }
     configure(transport, selection, name) {
+      this.playVersion = (this.playVersion || 0) + 1;
+      this.playing = null;
       this.transport = transport;
       this.session = new ReviewSession(transport, () => this.render());
       this.session.select(selection);
@@ -170,6 +201,7 @@ if (typeof HTMLElement !== 'undefined') {
     }
     disconnectedCallback() {
       clearInterval(this.timer); this.$('video')?.pause();
+      this.playVersion = (this.playVersion || 0) + 1; this.playing = null;
       if (this.session) {
         this.session.generation++; this.session.busy = false;
         this.session.refreshing = null; this.detached = true;
@@ -195,13 +227,30 @@ if (typeof HTMLElement !== 'undefined') {
       this.$('#save').disabled = s.busy || state !== 'ready';
       if (state === 'ready') this.play(s.job.id, false);
     }
-    play(id, saved) {
-      const url = this.transport.mediaUrl(id, saved);
-      if (this.$('video')?.getAttribute('src') === url) return;
+    async play(id, saved, reload = false) {
+      if (!reload && this.playing?.id === id && this.playing.saved === saved) return;
+      const version = this.playVersion = (this.playVersion || 0) + 1;
+      this.playing = {id,saved};
       this.$('video')?.pause();
+      this.$('#reload').hidden = true;
+      let url;
+      try {
+        url = await this.transport.mediaUrl(id, saved);
+      } catch {
+        if (version === this.playVersion && this.isConnected) {
+          this.$('#status').textContent = 'Playback could not be opened. Try Reload playback.';
+          this.$('#reload').hidden = false;
+        }
+        return;
+      }
+      if (version !== this.playVersion || !this.isConnected) return;
       const video = document.createElement('video');
       video.controls = true; video.playsInline = true; video.preload = 'metadata'; video.src = url;
-      video.onerror = () => { this.$('#status').textContent = 'This copy could not play. Your saved clip, if any, is still available.'; };
+      video.onerror = () => {
+        if (version !== this.playVersion) return;
+        this.$('#status').textContent = 'Playback expired or was interrupted. Reload playback to try again. Your saved clip is unchanged.';
+        this.$('#reload').hidden = false;
+      };
       this.$('#player').replaceChildren(video);
     }
     async library() {
