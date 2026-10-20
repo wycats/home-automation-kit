@@ -28,3 +28,16 @@ jobs:
       - run: cargo test --locked --all-targets
       - run: cargo test --locked --doc
       - run: cargo package --locked
+  video-worker:
+    name: Synthetic video worker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup update stable && rustup default stable
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: cargo build --locked --bin video-worker
+      - run: VIDEO_TEST_FFMPEG=/usr/bin/ffmpeg VIDEO_TEST_FFPROBE=/usr/bin/ffprobe cargo test --locked --test video_worker -- --include-ignored
+      - run: npm install --prefix "$RUNNER_TEMP/browser-tests" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+      - run: "$RUNNER_TEMP/browser-tests/node_modules/.bin/playwright install --with-deps chromium"
+      - run: PLAYWRIGHT_PACKAGE="$RUNNER_TEMP/browser-tests/node_modules/playwright/package.json" VIDEO_TEST_BROWSER=1 python3 tests/video_worker_http.py
+      - run: node web/review-worker.test.mjs

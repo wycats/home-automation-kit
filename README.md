@@ -12,6 +12,14 @@ credentials, recordings, and device inventories belong outside this repository.
 
 Licensed under MIT.
 
+## Browser clip worker pilot
+
+The [isolated video worker](docs/video-worker.md) prepares verified browser
+previews and saves named clips separately. It includes a persisted Rust job
+service, a review UI component and synthetic-media qualification. It is not
+deployed automatically; hardware acceleration and the authenticated recorder
+adapter require commissioning before production use.
+
 ## First adapter: Frigate observations
 
 ```sh
