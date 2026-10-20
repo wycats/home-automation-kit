@@ -6,3 +6,5 @@
 *.key
 *.p12
 /local/
+__pycache__/
+*.pyc

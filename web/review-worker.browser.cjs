@@ -109,6 +109,17 @@ const {chromium} = req('playwright');
       await window.card.applyRange();
     });
     assert.equal(await panel.locator('#name').inputValue(),'A moment');
+    await page.evaluate(async()=>{
+      const p=window.card.shadowRoot.querySelector('katz-worker-review');
+      const original=window.transport.mediaUrl;
+      let finish;
+      window.transport.mediaUrl=()=>new Promise(r=>finish=r);
+      const old=p.play('b'.repeat(64),false);
+      window.transport.mediaUrl=original;
+      await p.play('c'.repeat(64),false);
+      finish('/synthetic/old-signed-url');await old;
+    });
+    assert.match(await panel.locator('video').getAttribute('src'),/c{64}/);
     for(const width of [390,768,1440]) {
       await page.setViewportSize({width,height:900});
       assert.equal(await panel.evaluate(e=>e.scrollWidth<=e.clientWidth+1),true,`overflow at ${width}`);

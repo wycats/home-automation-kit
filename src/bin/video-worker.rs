@@ -1,4 +1,4 @@
-//! Loopback-only experimental worker. A future authenticated HA adapter resolves
+//! Loopback-only experimental worker. The isolated authenticated HA adapter resolves
 //! recording selections to staged source IDs; this server never opens LAN access.
 use home_automation_kit::video_worker::{ClipRequest, Config, Result, Selection, State, Store};
 use serde::Deserialize;

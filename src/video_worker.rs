@@ -197,11 +197,60 @@ impl Store {
         Ok(file)
     }
 
-    fn source(&self, request: &ClipRequest) -> Result<&Source> {
+    /// Locally staged manifests are published only after their immutable media.
+    /// HTTP callers cannot register manifests or choose filesystem paths.
+    fn catalog(&self) -> Result<Vec<Source>> {
+        let mut sources = self.config.sources.clone();
+        if sources.len() > 128 {
+            return Err("source catalog limit reached".into());
+        }
+        let root = self.config.root.join("sources");
+        if !root.exists() {
+            return Ok(sources);
+        }
+        let root = fs::canonicalize(root)?;
+        for (index, entry) in fs::read_dir(&root)?.take(130).enumerate() {
+            if index >= 129 {
+                return Err("source catalog limit reached".into());
+            }
+            let entry = entry?;
+            let id = entry.file_name().to_string_lossy().to_string();
+            if !valid_id(&id) || !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let manifest = entry.path().join("source.json");
+            if !manifest.exists() {
+                continue;
+            }
+            if fs::metadata(&manifest)?.len() > 65536 {
+                return Err("source manifest too large".into());
+            }
+            let source: Source = serde_json::from_reader(File::open(manifest)?)?;
+            let path = fs::canonicalize(&source.path)?;
+            if source.id != id
+                || !valid_id(&source.camera)
+                || source.end_ms <= source.start_ms
+                || source.end_ms - source.start_ms > 600_000
+                || source.sha256.len() != 64
+                || !source.sha256.bytes().all(|c| c.is_ascii_hexdigit())
+                || !path.starts_with(root.join(&id))
+                || !path.is_file()
+                || sources.iter().any(|s| s.id == id)
+            {
+                return Err("invalid staged manifest".into());
+            }
+            sources.push(source);
+            if sources.len() > 128 {
+                return Err("source catalog limit reached".into());
+            }
+        }
+        Ok(sources)
+    }
+
+    fn source(&self, request: &ClipRequest) -> Result<Source> {
         let source = self
-            .config
-            .sources
-            .iter()
+            .catalog()?
+            .into_iter()
             .find(|s| s.id == request.source)
             .ok_or("unknown source")?;
         if request.profile != PROFILE
@@ -247,9 +296,8 @@ impl Store {
     pub fn resolve(&self, selection: &Selection) -> Result<String> {
         // Deterministic choice of the smallest covering immutable staged file.
         let mut sources: Vec<_> = self
-            .config
-            .sources
-            .iter()
+            .catalog()?
+            .into_iter()
             .filter(|source| {
                 self.source(&ClipRequest {
                     source: source.id.clone(),
@@ -261,7 +309,7 @@ impl Store {
                 .is_ok()
             })
             .collect();
-        sources.sort_by_key(|source| (source.end_ms - source.start_ms, &source.id));
+        sources.sort_by(|a, b| (a.end_ms - a.start_ms, &a.id).cmp(&(b.end_ms - b.start_ms, &b.id)));
         Ok(sources
             .first()
             .ok_or("selection has no contiguous staged coverage")?

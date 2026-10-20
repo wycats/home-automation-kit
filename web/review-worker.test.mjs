@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ReviewSession,sameOriginTransport} from './review-worker.mjs';
+import {ReviewSession,sameOriginTransport,homeAssistantTransport} from './review-worker.mjs';
 const selection={camera:'room',start_ms:11000,end_ms:13000};
 const id='a'.repeat(64);
 let state='queued', saved=0, calls=[];
@@ -63,4 +63,14 @@ assert.equal(refreshCalls,1);
 finishRefresh({id,state:'ready'});await firstPoll;
 assert.equal(polling.job.state,'ready');
 assert.equal(polling.refreshing,null);
+const haCalls=[];
+const ha=homeAssistantTransport({callApi:async(...args)=>{
+  haCalls.push(args);return {url:`/api/ha_video_worker/media/jobs/${id}/room/user?authSig=synthetic`};
+}});
+await ha.request('/jobs',{...selection,source:'untrusted',profile:'arbitrary'});
+assert.deepEqual(haCalls[0],['POST','ha_video_worker/control/jobs',selection]);
+assert.match(await ha.mediaUrl(id),/^\/api\/ha_video_worker\/media\//);
+assert.deepEqual(haCalls[1],['POST','ha_video_worker/media-url',{id,kind:'jobs'}]);
+assert.throws(()=>ha.request('/jobs/../secret'));
+await assert.rejects(homeAssistantTransport({callApi:async()=>({url:'https://elsewhere/secret'})}).mediaUrl(id));
 console.log('Review preparation/save separation, stale navigation, cancellation and transport tests passed');
