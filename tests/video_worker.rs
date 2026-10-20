@@ -44,7 +44,9 @@ fn request() -> ClipRequest {
 #[test]
 fn selection_scope_and_identity() {
     let store = fixture();
+    assert!(store.lookup(&request()).unwrap().is_none());
     let job = store.submit(request()).unwrap();
+    assert_eq!(store.lookup(&request()).unwrap().unwrap().id, job.id);
     assert_eq!(job.id, store.submit(request()).unwrap().id);
     let mut other = request();
     other.end_ms += 1000;
@@ -62,10 +64,9 @@ fn selection_scope_and_identity() {
     assert!(store.save(&job.id, "test").is_err());
     let mut config = store.config.clone();
     config.sources[0].sha256 = "b".repeat(64);
-    assert_ne!(
-        Store::open(config).unwrap().submit(request()).unwrap().id,
-        job.id
-    );
+    let changed = Store::open(config).unwrap();
+    assert!(changed.lookup(&request()).unwrap().is_none());
+    assert_ne!(changed.submit(request()).unwrap().id, job.id);
     fs::remove_dir_all(store.config.root.parent().unwrap()).unwrap();
 }
 #[test]

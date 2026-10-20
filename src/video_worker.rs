@@ -215,17 +215,29 @@ impl Store {
         Ok(self.config.root.join("jobs").join(id))
     }
 
-    pub fn submit(&self, request: ClipRequest) -> Result<Job> {
-        let source = self.source(&request)?;
-        let id = format!(
+    fn identity(&self, request: &ClipRequest, backend: Backend) -> Result<String> {
+        let source = self.source(request)?;
+        Ok(format!(
             "{:x}",
             Sha256::digest(serde_json::to_vec(&(
-                &request,
+                request,
                 source.sha256.to_lowercase(),
                 source.start_ms,
-                self.config.backend
+                backend
             ))?)
-        );
+        ))
+    }
+
+    pub fn lookup(&self, request: &ClipRequest) -> Result<Option<Job>> {
+        let id = self.identity(request, self.config.backend)?;
+        if self.dir(&id)?.exists() {
+            return Ok(Some(self.get(&id)?));
+        }
+        Ok(None)
+    }
+
+    pub fn submit(&self, request: ClipRequest) -> Result<Job> {
+        let id = self.identity(&request, self.config.backend)?;
         let dir = self.dir(&id)?;
         if dir.exists() {
             return self.get(&id);
@@ -416,15 +428,7 @@ impl Store {
 
     fn convert(&self, job: &Job, dir: &Path, deadline: Instant) -> Result<Media> {
         let source = self.source(&job.request)?;
-        let expected_id = format!(
-            "{:x}",
-            Sha256::digest(serde_json::to_vec(&(
-                &job.request,
-                source.sha256.to_lowercase(),
-                source.start_ms,
-                job.backend
-            ))?)
-        );
+        let expected_id = self.identity(&job.request, job.backend)?;
         if expected_id != job.id || fs::metadata(&source.path)?.len() > 512 * 1024 * 1024 {
             return Err("source catalog changed or staged source exceeds 512 MiB".into());
         }

@@ -123,18 +123,15 @@ fn handle(mut request: Request, store: &Store, token: &str, streams: &Arc<Atomic
     {
         if store.media_path(parts[1], parts[0] == "clips").is_err() {
             json(request, 404, serde_json::json!({"error":"media not ready"}));
-        } else if streams
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
-                (n < 2).then_some(n + 1)
-            })
-            .is_err()
-        {
+        } else if streams.load(Ordering::SeqCst) >= 2 {
             json(
                 request,
                 503,
                 serde_json::json!({"error":"media streams busy; retry shortly"}),
             );
         } else {
+            // Only this control thread increments; stream threads decrement.
+            streams.fetch_add(1, Ordering::SeqCst);
             // A slow player must not block cancellation or status requests.
             let owner = store.clone();
             let streams = Arc::clone(streams);
@@ -155,6 +152,11 @@ fn handle(mut request: Request, store: &Store, token: &str, streams: &Arc<Atomic
         (&Method::Post, ["jobs"]) => Ok(serde_json::to_value(
             store.submit(body::<ClipRequest>(&mut request)?)?,
         )?),
+        (&Method::Post, ["jobs", "lookup"]) => {
+            Ok(serde_json::to_value(
+                store.lookup(&body::<ClipRequest>(&mut request)?)?,
+            )?)
+        }
         (&Method::Get, ["jobs", id]) => Ok(serde_json::to_value(store.get(id)?)?),
         (&Method::Post, ["jobs", id, "retry"]) => Ok(serde_json::to_value(store.retry(id)?)?),
         (&Method::Post, ["jobs", id, "cancel"]) => {

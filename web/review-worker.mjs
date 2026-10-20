@@ -15,11 +15,11 @@ export class ReviewSession {
     try {
       const source = await this.transport.resolve(selection);
       if (generation !== this.generation) return;
-      const jobs = await this.transport.request('/jobs');
+      const job = await this.transport.request('/jobs/lookup', {
+        source, ...selection, profile:'browser-1080p-v1'
+      });
       if (generation !== this.generation) return;
-      this.job = jobs.find(j => j.request.source === source &&
-        j.request.camera === selection.camera && j.request.start_ms === selection.start_ms &&
-        j.request.end_ms === selection.end_ms && j.request.profile === 'browser-1080p-v1') || null;
+      this.job = job;
       this.message = '';
     } catch {
       if (generation === this.generation) this.message = 'Could not check for an existing preview. Prepare preview will safely reuse any matching job.';

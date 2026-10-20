@@ -47,6 +47,7 @@ const {chromium} = req('playwright');
         mediaUrl:(id,saved)=>`/synthetic/${saved?'clips':'jobs'}/${id}/media`,
         request:async(path,body)=>{
           if(body)window.posts.push(path);
+          if(path==='/jobs/lookup')return structuredClone(window.jobs[0] || null);
           if(path==='/jobs'&&body) {
             const job={id:'a'.repeat(64),request:body,state:'queued'};
             window.jobs=[job];return structuredClone(job);

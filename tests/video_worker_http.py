@@ -98,7 +98,10 @@ def main():
                 assert e.code == 401
             selection = dict(source="synthetic", camera="fixture", start_ms=11100,
                              end_ms=13200, profile="browser-1080p-v1")
+            assert data("/jobs/lookup", selection) is None
+            assert data("/jobs") == []
             job = data("/jobs", selection)
+            assert data("/jobs/lookup", selection)["id"] == job["id"]
             assert data("/jobs", selection)["id"] == job["id"]
             ready = terminal(job)
             assert ready["state"] == "ready", ready
