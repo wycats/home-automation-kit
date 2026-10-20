@@ -57,20 +57,20 @@ integration in an isolated HA instance before production adoption.
 
 ## Home Assistant source reviewed
 
-The auth behavior was checked against Home Assistant Core's `dev` sources on
-2026-10-19; these branch links move, so repeat the review against the exact Core
-version before deployment:
+The auth behavior was checked against Home Assistant Core **2026.10.2** on
+2026-10-19. This establishes static API compatibility, not custom-component
+loading or real-user playback. Repeat runtime qualification before deployment:
 
-- [`homeassistant/components/http/auth.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/http/auth.py):
+- [`homeassistant/components/http/auth.py`](https://github.com/home-assistant/core/blob/2026.10.2/homeassistant/components/http/auth.py):
   `async_sign_path` binds path, query parameters, expiry and issuing refresh
   token; signed-request middleware verifies those claims, looks up the refresh
   token, restores `hass_user`, and marks the request authenticated.
-- [`homeassistant/helpers/http.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/helpers/http.py):
+- [`homeassistant/helpers/http.py`](https://github.com/home-assistant/core/blob/2026.10.2/homeassistant/helpers/http.py):
   `request_handler_factory` permits valid signed requests through views with
   `requires_auth = True`; the default view does not enable CORS for every origin.
-- [`homeassistant/auth/permissions/const.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/auth/permissions/const.py)
+- [`homeassistant/auth/permissions/const.py`](https://github.com/home-assistant/core/blob/2026.10.2/homeassistant/auth/permissions/const.py)
   defines the `read` entity policy, and
-  [`homeassistant/auth/models.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/auth/models.py)
+  [`homeassistant/auth/models.py`](https://github.com/home-assistant/core/blob/2026.10.2/homeassistant/auth/models.py)
   exposes `user.permissions.check_entity` used for the per-camera check.
 - The frontend's [`HomeAssistantApi` type](https://github.com/home-assistant/frontend/blob/dev/src/types.ts)
   defines `hass.callApi(method, path, parameters, headers)`; callers pass the
