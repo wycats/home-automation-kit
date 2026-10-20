@@ -1,0 +1,32 @@
+# Commissioning template only. Review paths, user, render node and limits first.
+[Unit]
+Description=Private browser clip conversion worker
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/video-saved
+
+[Service]
+Type=simple
+User=video-worker
+Group=video-worker
+SupplementaryGroups=render
+EnvironmentFile=/etc/video-worker/worker.env
+ExecStart=/usr/local/bin/video-worker /etc/video-worker/config.json 8787
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=10
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/video-worker /srv/video-saved
+DevicePolicy=closed
+DeviceAllow=/dev/dri/renderD128 rw
+MemoryMax=2G
+TasksMax=128
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
