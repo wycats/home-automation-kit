@@ -6,8 +6,9 @@ its original recordings, and retention policy remain independent.
 
 The implementation is a pilot, not a deployed HA integration. It includes a
 Rust service, persisted job state, a browser component and an opt-in seam for the
-current review card. **Live recording resolution/staging and the authenticated
-HA proxy are still integration work.** The Intel backend needs qualification on
+current review card. The [HA bridge and local source publisher](video-bridge.md)
+are isolated integration candidates; automatic Frigate staging and qualification
+inside the installed HA runtime remain ahead. The Intel backend needs qualification on
 the actual machine. No measured throughput or hardware support claim follows
 from the software tests.
 

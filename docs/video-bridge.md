@@ -12,6 +12,16 @@ need entity read permission; other users also need an explicit camera grant.
 The browser uses `homeAssistantTransport(hass)` and HA's `callApi` authentication.
 It never receives the worker token, recording paths, or a general worker proxy.
 
+An isolated host can opt in once it has the current HA `hass` object:
+
+```js
+import {attachWorkerReview, homeAssistantTransport} from "./review-worker.mjs";
+attachWorkerReview(reviewCard, homeAssistantTransport(hass));
+```
+
+Attach once per card instance, before its next selection update. This is an
+explicit host hook; the module does not patch an installed dashboard by itself.
+
 Control routes resolve selections server-side. Object operations and lists check
 camera authorization. Playback uses HA's expiring signed paths, bound to the
 issuing user and one job/clip; the media handler checks current permissions again.
