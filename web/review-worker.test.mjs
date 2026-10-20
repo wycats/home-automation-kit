@@ -52,4 +52,15 @@ const moving=new ReviewSession({...transport,request:()=>new Promise(r=>finishLo
 moving.select(selection);const looking=moving.restore();await Promise.resolve();
 moving.select({...selection,end_ms:14000});finishLookup({id,state:'ready'});await looking;
 assert.equal(moving.job,null);
+// Slow polls cannot overlap and overwrite a later terminal result.
+let finishRefresh, refreshCalls=0;
+const polling=new ReviewSession({...transport,request:()=>{
+  refreshCalls++; return new Promise(r=>finishRefresh=r);
+}});
+polling.select(selection);polling.job={id,state:'running'};
+const firstPoll=polling.refresh();await polling.refresh();
+assert.equal(refreshCalls,1);
+finishRefresh({id,state:'ready'});await firstPoll;
+assert.equal(polling.job.state,'ready');
+assert.equal(polling.refreshing,null);
 console.log('Review preparation/save separation, stale navigation, cancellation and transport tests passed');

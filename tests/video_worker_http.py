@@ -117,6 +117,9 @@ def main():
                 assert response.headers["Content-Type"] == "video/mp4"
             with api(f"/clips/{clip['id']}/media") as response:
                 downloaded = response.read()
+            with api(f"/clips/{clip['id']}/media", headers={"Range":"bytes=0-999999999"}) as response:
+                assert response.status == 206 and response.read() == downloaded
+                assert response.headers["Content-Range"] == f"bytes 0-{len(downloaded)-1}/{len(downloaded)}"
             assert hashlib.sha256(downloaded).hexdigest() == ready["media"]["sha256"]
             # Precise trim at a non-keyframe boundary: compare output frame count
             # and source-reference frames, allowing lossy encoding pixel error.

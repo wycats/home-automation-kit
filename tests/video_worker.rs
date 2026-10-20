@@ -113,6 +113,45 @@ fn preserves_aspect_without_upscaling() {
     assert!(dimensions(0, 1080).is_err());
 }
 
+#[test]
+fn storage_roots_cannot_contain_each_other() {
+    let store = fixture();
+    for saved_inside in [true, false] {
+        let mut config = store.config.clone();
+        if saved_inside {
+            config.saved_root = config.root.join("saved");
+        } else {
+            config.root = config.saved_root.join("cache");
+        }
+        assert!(Store::open(config).is_err());
+    }
+    fs::remove_dir_all(store.config.root.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn interrupted_submission_can_be_recreated_without_publishing_remnants() {
+    let store = fixture();
+    let job = store.submit(request()).unwrap();
+    let dir = store.dir(&job.id).unwrap();
+    for metadata in [None, Some(b"broken".as_slice())] {
+        if let Some(bytes) = metadata {
+            fs::write(dir.join("job.json"), bytes).unwrap();
+        } else {
+            fs::remove_file(dir.join("job.json")).unwrap();
+        }
+        fs::write(dir.join("cancel"), b"").unwrap();
+        fs::write(dir.join("preview.mp4"), b"partial").unwrap();
+        assert!(store.lookup(&request()).unwrap().is_none());
+        let restored = store.submit(request()).unwrap();
+        assert_eq!(restored.id, job.id);
+        assert_eq!(restored.state, State::Queued);
+        assert!(!dir.join("cancel").exists());
+        assert!(!dir.join("preview.mp4").exists());
+        assert!(store.media_path(&job.id, false).is_err());
+    }
+    fs::remove_dir_all(store.config.root.parent().unwrap()).unwrap();
+}
+
 // Opt-in only: use locally installed binaries, no download or household media.
 #[test]
 #[ignore = "requires real FFmpeg/ffprobe; mandatory in synthetic-media CI"]

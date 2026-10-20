@@ -7,6 +7,7 @@ export class ReviewSession {
   }
   select(selection) {
     this.generation++; this.selection = {...selection}; this.job = null;
+    this.refreshing = null;
     this.busy = false; this.message = ''; this.saved = null; this.onChange(this);
   }
   async restore() {
@@ -52,14 +53,17 @@ export class ReviewSession {
     }
   }
   async refresh() {
-    if (!this.job || this.busy) return;
+    if (!this.job || this.busy || this.refreshing) return;
     const generation = this.generation, id = this.job.id;
+    const pending = {}; this.refreshing = pending;
     try {
       const job = await this.transport.request(`/jobs/${id}`);
       if (generation !== this.generation || id !== this.job?.id) return;
       this.job = job; this.message = '';
     } catch {
       if (generation === this.generation) this.message = 'Connection interrupted. Your preparation may still be running; checking again shortly.';
+    } finally {
+      if (this.refreshing === pending) this.refreshing = null;
     }
     if (generation === this.generation) this.onChange(this);
   }
@@ -156,8 +160,21 @@ if (typeof HTMLElement !== 'undefined') {
       this.connect();
       this.session.restore();
     }
-    connectedCallback() { this.connect(); }
-    disconnectedCallback() { clearInterval(this.timer); this.session && this.session.generation++; }
+    connectedCallback() {
+      this.connect();
+      if (this.session && this.detached) {
+        this.detached = false;
+        this.session.select(this.session.selection);
+        this.session.restore();
+      }
+    }
+    disconnectedCallback() {
+      clearInterval(this.timer); this.$('video')?.pause();
+      if (this.session) {
+        this.session.generation++; this.session.busy = false;
+        this.session.refreshing = null; this.detached = true;
+      }
+    }
     connect() {
       clearInterval(this.timer);
       if (this.isConnected && this.session) this.timer = setInterval(() => {
@@ -217,7 +234,9 @@ export function attachWorkerReview(card, transport) {
   let selectionVersion = 0;
   card.applyRange = async function(...args) {
     const version = ++selectionVersion;
-    const priorName = this.shadowRoot.querySelector('katz-worker-review')?.shadowRoot.querySelector('#name').value;
+    const priorPanel = this.shadowRoot.querySelector('katz-worker-review');
+    const priorName = priorPanel?.shadowRoot.querySelector('#name').value;
+    const priorSelection = priorPanel?.session.selection;
     this.shadowRoot.querySelector('katz-worker-review')?.remove();
     await original.apply(this,args);
     if (version !== selectionVersion) return;
@@ -230,10 +249,12 @@ export function attachWorkerReview(card, transport) {
     stage.querySelector('katz-worker-review')?.remove();
     const panel = document.createElement('katz-worker-review');
     stage.append(panel);
-    panel.configure(transport, {
+    const selection = {
       camera:this.config.camera, start_ms:Math.round(this.range.start*1000),
       end_ms:Math.round(this.range.end*1000)
-    }, priorName || this.shadowRoot.querySelector('#clip-name')?.value || 'A moment');
+    };
+    const sameSelection = priorSelection && ['camera','start_ms','end_ms'].every(k=>priorSelection[k]===selection[k]);
+    panel.configure(transport, selection, sameSelection ? priorName : 'A moment');
     // Existing original-quality save remains available; prevent duplicate
     // legacy software conversion once this panel supplies compatible playback.
     const legacy = this.shadowRoot.querySelector('[data-action="playable"]');

@@ -87,6 +87,28 @@ const {chromium} = req('playwright');
     await panel.locator('#load').click();
     await panel.locator('#library button').click();
     assert.match(await panel.locator('video').getAttribute('src'),/\/clips\//);
+    // Detach during a pending operation: reconnect restores rather than staying busy.
+    await page.evaluate(async()=>{
+      const p=window.card.shadowRoot.querySelector('katz-worker-review'), parent=p.parentNode;
+      const original=window.transport.request;
+      let finish;
+      window.transport.request=()=>new Promise(r=>finish=r);
+      const saving=p.session.save('Pending');
+      p.remove();window.transport.request=original;parent.append(p);
+      finish({id:'a'.repeat(64),name:'Pending'});await saving;
+    });
+    await page.waitForFunction(()=>{
+      const s=window.card.shadowRoot.querySelector('katz-worker-review').session;
+      return !s.busy && s.job?.state==='ready';
+    });
+    // A distinct selection gets its own draft, never the previous moment's name.
+    await page.evaluate(async()=>{
+      const input=window.card.shadowRoot.querySelector('#clip-start');
+      if(input) input.stepUp(60);
+      else window.card.range={...window.card.range,start:window.card.range.start+1};
+      await window.card.applyRange();
+    });
+    assert.equal(await panel.locator('#name').inputValue(),'A moment');
     for(const width of [390,768,1440]) {
       await page.setViewportSize({width,height:900});
       assert.equal(await panel.evaluate(e=>e.scrollWidth<=e.clientWidth+1),true,`overflow at ${width}`);

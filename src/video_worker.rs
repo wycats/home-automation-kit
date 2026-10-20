@@ -178,7 +178,9 @@ impl Store {
         }
         fs::create_dir_all(config.root.join("jobs"))?;
         fs::create_dir_all(&config.saved_root)?;
-        if fs::canonicalize(&config.root)? == fs::canonicalize(&config.saved_root)? {
+        let preview = fs::canonicalize(&config.root)?;
+        let saved = fs::canonicalize(&config.saved_root)?;
+        if preview.starts_with(&saved) || saved.starts_with(&preview) {
             return Err("preview and saved storage must be separate".into());
         }
         Ok(Self { config })
@@ -238,10 +240,8 @@ impl Store {
 
     pub fn lookup(&self, request: &ClipRequest) -> Result<Option<Job>> {
         let id = self.identity(request, self.config.backend)?;
-        if self.dir(&id)?.exists() {
-            return Ok(Some(self.get(&id)?));
-        }
-        Ok(None)
+        // An interrupted metadata publication is not a usable existing job.
+        Ok(self.get(&id).ok())
     }
 
     pub fn resolve(&self, selection: &Selection) -> Result<String> {
@@ -272,8 +272,8 @@ impl Store {
     pub fn submit(&self, request: ClipRequest) -> Result<Job> {
         let id = self.identity(&request, self.config.backend)?;
         let dir = self.dir(&id)?;
-        if dir.exists() {
-            return self.get(&id);
+        if let Ok(job) = self.get(&id) {
+            return Ok(job);
         }
         if self.jobs()?.len() >= 128 {
             return Err(
@@ -289,7 +289,15 @@ impl Store {
         {
             return Err("queue full".into());
         }
-        fs::create_dir(&dir)?;
+        // The worker owns this deterministic directory. Preserve unknown files,
+        // but clear known remnants before recreating an interrupted submission.
+        fs::create_dir_all(&dir)?;
+        for name in ["cancel", "preview.mp4", "preview.part.mp4", "job.tmp"] {
+            let path = dir.join(name);
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
         let job = Job {
             id,
             request,
@@ -402,6 +410,8 @@ impl Store {
         let media = job.media.ok_or("missing media verification")?;
         let dest = self.config.saved_root.join(id);
         fs::create_dir_all(&dest)?;
+        // Persist the parent entry as well as the clip's own files/directory.
+        sync_directory(&self.config.saved_root)?;
         let final_path = dest.join("clip.mp4");
         if !final_path.exists() || sha256(&final_path)? != media.sha256 {
             let part = dest.join("clip.part");

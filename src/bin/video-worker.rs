@@ -59,7 +59,7 @@ fn media(request: Request, store: &Store, id: &str, saved: bool) -> Result<()> {
                 ))
             });
         match parsed {
-            Some((a, b)) if a <= b && b < len => (a, b, true),
+            Some((a, b)) if a <= b && a < len => (a, b.min(len - 1), true),
             _ => {
                 request.respond(
                     Response::empty(StatusCode(416))
