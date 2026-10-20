@@ -1,5 +1,7 @@
 # H.264 synchronous rejection cleanup
 
+Historical review of the preceding increment. [JOB-LIFETIME.md](JOB-LIFETIME.md) describes the current callback ownership follow-on and its remaining hardware gates.
+
 2026-10-19. Compile-only candidate; no device/backend enablement.
 
 This pass fixes synchronous resource/request cleanup without changing H.264's asynchronous IRQ ownership. The latter and reference reconstruction validity remain hardware gates described in `BUFFER-IRQ-REVIEW.md`. That review's original error-path findings describe the earlier patch snapshot; the changes below supersede its pre-start portion only.

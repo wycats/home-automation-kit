@@ -1,5 +1,7 @@
 # Scope the encoder IRQ adaptation
 
+Historical review of the preceding increment. [JOB-LIFETIME.md](JOB-LIFETIME.md) describes the current callback ownership follow-on and its remaining hardware gates.
+
 2026-10-19. Patch hash `7504ef8139bcfb727e389ed86f82febeed5098a01fc7979eac0afd00d71bb7a2`.
 
 The imported prototype routed both existing JPEG engines and new H.264 jobs through a deferred IRQ thread. That thread re-reads the current mem2mem context, so a watchdog completion can change which job it sees. This pass reduces the affected surface and corrects status handling; it does not solve H.264 job ownership.

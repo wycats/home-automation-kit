@@ -63,10 +63,10 @@ def main():
     assert run.count(boundary) == 1
     prefix, hardware_tail = run.split(boundary)
     assert "vepu_write(" not in prefix and "hantro_watchdog_kick(" not in prefix
-    assert re.findall(r"\breturn\s+([^;]+);", hardware_tail) == ["0"]
+    assert re.findall(r"\breturn\s+([^;]+);", hardware_tail) == ["ret"]
     assert not re.search(r"\bgoto\b", hardware_tail)
-    assert hardware_tail.count("hantro_watchdog_kick(ctx);") == 1
-    assert hardware_tail.index("hantro_watchdog_kick(ctx);") < hardware_tail.rindex(
+    assert hardware_tail.count("hantro_h264_enc_arm_locked(ctx);") == 1
+    assert hardware_tail.index("hantro_h264_enc_arm_locked(ctx);") < hardware_tail.rindex(
         "vepu_write(vpu, reg, VEPU_REG_ENCODE_START);")
     hashes["rk3399_vpu_h264_enc_run_prefix"] = digest(prefix.encode())
     hashes["rk3399_vpu_h264_enc_run_hardware_tail"] = digest(hardware_tail.encode())
@@ -79,6 +79,9 @@ def main():
     parts.append(prefix + "\tsynthetic_hardware_commit(ctx);\n\treturn 0;\n}\n")
     parts.append("#pragma GCC diagnostic pop\n")
     source = sources["hantro_drv.c"]
+    start = source.index("enum hantro_h264_job_owner {")
+    end = source.index("static void hantro_h264_claim_locked", start)
+    parts.insert(0, source[start:end])
     parts.append(source[:source.index("#include")])
     for name in ["device_run_h264", "device_run"]:
         text = function(source, name)

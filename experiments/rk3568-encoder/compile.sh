@@ -47,6 +47,10 @@ cp "$work/prestart/results.json" "$work/prestart/prestart_subject.inc" "$report/
 python3 "$packet/irq_dispatch_test.py" "$work/linux" "$work/irq-status-test" \
   --sanitize > "$report/irq-status-tests.txt" 2>&1
 cp "$work/irq-status-test/result.json" "$report/irq-status-result.json"
+python3 "$packet/job_lifetime_test.py" "$work/linux" "$work/job-lifetime-test" \
+  --sanitize > "$report/job-lifetime-tests.txt" 2>&1
+mkdir -p "$report/job-lifetime"
+cp "$work/job-lifetime-test/result.json" "$work/job-lifetime-test/job_subject.inc" "$report/job-lifetime/"
 git init "$work/client"
 git -C "$work/client" fetch --depth=1 "$(value client repository)" "$(value client commit)"
 git -C "$work/client" checkout --detach FETCH_HEAD
