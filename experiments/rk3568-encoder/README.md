@@ -3,7 +3,12 @@
 The maintained Rust client's device-free foundation and verification commands
 are in [CLIENT.md](CLIENT.md). Hardware execution remains disabled.
 
-The latest follow-on is [reconstruction eligibility](REFERENCE-VALIDITY.md):
+The latest contained follow-on qualifies H.264 status with the VEPU2 raw IRQ bit
+before acknowledging or claiming a job. Its 98 extracted-handler cases and the
+separate [DMA/reset boundary audit](DMA-RESET-BOUNDARY.md) keep that software
+correction distinct from hardware quiescence. No reset sequence is added.
+
+[Reconstruction eligibility](REFERENCE-VALIDITY.md) ensures that
 only final successful jobs publish references; requeue, cleanup and stream or
 error epochs withdraw them. A contained MMAP capture restriction keeps allocation
 changes out of streaming jobs. This extends [per-job callback ownership](JOB-LIFETIME.md): immutable
