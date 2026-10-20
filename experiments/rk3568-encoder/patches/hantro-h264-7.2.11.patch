@@ -1795,7 +1795,7 @@ index 49e4088..c18296a 100644
  #define     VEPU_REG_DMV_PENALTY_TABLE_BIT(x, i)        ((x) << (i) * 8)
  #define VEPU_REG_DMV_Q_PIXEL_PENALTY_TBL(i)	(0x260 + ((i) * 0x4))
 diff --git a/drivers/media/platform/verisilicon/rockchip_vpu_hw.c b/drivers/media/platform/verisilicon/rockchip_vpu_hw.c
-index 02673be..e97e5b0 100644
+index 02673be..bad216c 100644
 --- a/drivers/media/platform/verisilicon/rockchip_vpu_hw.c
 +++ b/drivers/media/platform/verisilicon/rockchip_vpu_hw.c
 @@ -59,6 +59,19 @@ static const struct hantro_fmt rockchip_vpu_enc_fmts[] = {
@@ -1818,7 +1818,7 @@ index 02673be..e97e5b0 100644
  };
  
  static const struct hantro_fmt rockchip_vpu1_postproc_fmts[] = {
-@@ -406,17 +419,32 @@ static irqreturn_t rockchip_vpu2_vepu_irq(int irq, void *dev_id)
+@@ -406,17 +419,40 @@ static irqreturn_t rockchip_vpu2_vepu_irq(int irq, void *dev_id)
  {
  	struct hantro_dev *vpu = dev_id;
  	enum vb2_buffer_state state;
@@ -1833,6 +1833,14 @@ index 02673be..e97e5b0 100644
 +		return IRQ_HANDLED;
 +	}
  	status = vepu_read(vpu, VEPU_REG_INTERRUPT);
++	/* Status bits alone do not mean this engine asserted an interrupt.
++	 * Match VEPU2's raw interrupt qualification before acknowledging or
++	 * claiming a job. A late real IRQ still needs a hardware idle fence.
++	 */
++	if (h264 && !(status & VEPU_REG_INTERRUPT_BIT)) {
++		spin_unlock_irqrestore(&vpu->irqlock, flags);
++		return IRQ_NONE;
++	}
  	state = (status & VEPU_REG_INTERRUPT_FRAME_READY) ?
  		VB2_BUF_STATE_DONE : VB2_BUF_STATE_ERROR;
 -
@@ -1855,7 +1863,7 @@ index 02673be..e97e5b0 100644
  	return IRQ_HANDLED;
  }
  
-@@ -505,6 +533,13 @@ static const struct hantro_codec_ops rk3036_vpu_codec_ops[] = {
+@@ -505,6 +541,13 @@ static const struct hantro_codec_ops rk3036_vpu_codec_ops[] = {
  		.init = hantro_h264_dec_init,
  		.exit = hantro_h264_dec_exit,
  	},
@@ -1869,7 +1877,7 @@ index 02673be..e97e5b0 100644
  	[HANTRO_MODE_MPEG2_DEC] = {
  		.run = hantro_g1_mpeg2_dec_run,
  		.reset = hantro_g1_reset,
-@@ -583,6 +618,13 @@ static const struct hantro_codec_ops rk3399_vpu_codec_ops[] = {
+@@ -583,6 +626,13 @@ static const struct hantro_codec_ops rk3399_vpu_codec_ops[] = {
  		.init = hantro_h264_dec_init,
  		.exit = hantro_h264_dec_exit,
  	},
@@ -1883,7 +1891,7 @@ index 02673be..e97e5b0 100644
  	[HANTRO_MODE_MPEG2_DEC] = {
  		.run = rockchip_vpu2_mpeg2_dec_run,
  		.reset = rockchip_vpu2_dec_reset,
-@@ -598,6 +640,13 @@ static const struct hantro_codec_ops rk3399_vpu_codec_ops[] = {
+@@ -598,6 +648,13 @@ static const struct hantro_codec_ops rk3399_vpu_codec_ops[] = {
  };
  
  static const struct hantro_codec_ops rk3568_vepu_codec_ops[] = {
@@ -1897,7 +1905,7 @@ index 02673be..e97e5b0 100644
  	[HANTRO_MODE_JPEG_ENC] = {
  		.run = rockchip_vpu2_jpeg_enc_run,
  		.reset = rockchip_vpu2_enc_reset,
-@@ -748,8 +797,8 @@ const struct hantro_variant rk3399_vpu_variant = {
+@@ -748,8 +805,8 @@ const struct hantro_variant rk3399_vpu_variant = {
  	.dec_offset = 0x400,
  	.dec_fmts = rk3399_vpu_dec_fmts,
  	.num_dec_fmts = ARRAY_SIZE(rk3399_vpu_dec_fmts),
@@ -1908,7 +1916,7 @@ index 02673be..e97e5b0 100644
  	.codec_ops = rk3399_vpu_codec_ops,
  	.irqs = rockchip_vpu2_irqs,
  	.num_irqs = ARRAY_SIZE(rockchip_vpu2_irqs),
-@@ -762,7 +811,7 @@ const struct hantro_variant rk3568_vepu_variant = {
+@@ -762,7 +819,7 @@ const struct hantro_variant rk3568_vepu_variant = {
  	.enc_offset = 0x0,
  	.enc_fmts = rockchip_vpu_enc_fmts,
  	.num_enc_fmts = ARRAY_SIZE(rockchip_vpu_enc_fmts),
