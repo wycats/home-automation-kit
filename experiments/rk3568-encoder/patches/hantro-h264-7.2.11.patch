@@ -126,7 +126,7 @@ index 0353de1..0a095fe 100644
 +
  #endif /* HANTRO_H_ */
 diff --git a/drivers/media/platform/verisilicon/hantro_drv.c b/drivers/media/platform/verisilicon/hantro_drv.c
-index 2e81877..b6abdde 100644
+index 2e81877..2b0667c 100644
 --- a/drivers/media/platform/verisilicon/hantro_drv.c
 +++ b/drivers/media/platform/verisilicon/hantro_drv.c
 @@ -97,6 +97,152 @@ static void hantro_job_finish(struct hantro_dev *vpu,
@@ -398,15 +398,48 @@ index 2e81877..b6abdde 100644
  	src = hantro_get_src_buf(ctx);
  	dst = hantro_get_dst_buf(ctx);
  
-@@ -197,6 +431,7 @@ err_cancel_job:
+@@ -195,8 +429,39 @@ err_cancel_job:
+ 	hantro_job_finish_no_pm(ctx->dev, ctx, VB2_BUF_STATE_ERROR);
+ }
  
++/* The experiment has no proven DMA-idle/reset contract yet. Do not let an
++ * arbitrary userspace client bypass the absent maintained hardware backend.
++ * Keep the preparatory paths above available for extracted offline tests, but
++ * reject external H.264 jobs before allocation, PM, clocks or MMIO. There is
++ * deliberately no module parameter or runtime bypass for this boundary.
++ */
++static void hantro_device_run(void *priv)
++{
++	struct hantro_ctx *ctx = priv;
++	struct hantro_dev *vpu = ctx->dev;
++	struct vb2_v4l2_buffer *src, *dst;
++	unsigned long flags;
++
++	if (!ctx->is_encoder || ctx->vpu_dst_fmt->codec_mode != HANTRO_MODE_H264_ENC) {
++		device_run(priv);
++		return;
++	}
++
++	src = hantro_get_src_buf(ctx);
++	dst = hantro_get_dst_buf(ctx);
++	spin_lock_irqsave(&vpu->irqlock, flags);
++	hantro_h264_ref_invalidate(&hantro_get_enc_buf(dst)->h264_ref);
++	spin_unlock_irqrestore(&vpu->irqlock, flags);
++	v4l2_ctrl_request_complete(src->vb2_buf.req_obj.req, &ctx->ctrl_handler);
++	/* Finish consumes the queued pair and lets mem2mem drain/abort normally.
++	 * It may release ctx; do not access ctx/vpu/buffers after this call.
++	 */
++	hantro_job_finish_no_pm(vpu, ctx, VB2_BUF_STATE_ERROR);
++}
++
  static const struct v4l2_m2m_ops vpu_m2m_ops = {
- 	.device_run = device_run,
+-	.device_run = device_run,
++	.device_run = hantro_device_run,
 +	.job_abort = hantro_h264_abort,
  };
  
  static int
-@@ -224,6 +459,7 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
+@@ -224,6 +489,7 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
  	src_vq->dev = ctx->dev->v4l2_dev.dev;
  	src_vq->supports_requests = true;
  
@@ -414,7 +447,7 @@ index 2e81877..b6abdde 100644
  	ret = vb2_queue_init(src_vq);
  	if (ret)
  		return ret;
-@@ -244,7 +480,8 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
+@@ -244,7 +510,8 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
  	dst_vq->io_modes = VB2_MMAP | VB2_DMABUF;
  	dst_vq->drv_priv = ctx;
  	dst_vq->ops = &hantro_queue_ops;
@@ -424,7 +457,7 @@ index 2e81877..b6abdde 100644
  	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
  	dst_vq->lock = &ctx->dev->vpu_mutex;
  	dst_vq->dev = ctx->dev->v4l2_dev.dev;
-@@ -439,6 +676,23 @@ static const struct hantro_ctrl controls[] = {
+@@ -439,6 +706,23 @@ static const struct hantro_ctrl controls[] = {
  			 */
  			.flags = V4L2_CTRL_FLAG_READ_ONLY,
  		},
@@ -448,7 +481,7 @@ index 2e81877..b6abdde 100644
  	}, {
  		.codec = HANTRO_MPEG2_DECODER,
  		.cfg = {
-@@ -1181,9 +1435,15 @@ static int hantro_probe(struct platform_device *pdev)
+@@ -1181,9 +1465,15 @@ static int hantro_probe(struct platform_device *pdev)
  		if (irq < 0)
  			return irq;
  

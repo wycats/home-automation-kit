@@ -40,6 +40,10 @@ gcc -Wall -Wextra -Werror -fsanitize=address,undefined -g \
   -I"$work/uapi/include" -I"$work/linux/drivers/media/platform/verisilicon" \
   "$packet/validation_test.c" -o "$work/validation-test"
 "$work/validation-test" > "$report/validation-tests.txt" 2>&1
+python3 "$packet/admission_test.py" "$work/linux" "$work/admission-test" \
+  --sanitize > "$report/admission-tests.txt" 2>&1
+mkdir -p "$report/admission"
+cp "$work/admission-test/result.json" "$work/admission-test/admission_subject.inc" "$report/admission/"
 python3 "$packet/prestart_test.py" --kernel "$work/linux" --uapi "$work/uapi/include" \
   --report "$work/prestart" --cc gcc --sanitize > "$report/prestart-tests.txt" 2>&1
 mkdir -p "$report/prestart"
