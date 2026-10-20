@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include "hantro_h264_enc_ref.h"
+typedef uint64_t u64;
 #ifdef _WIN32
 #include <windows.h>
 typedef SRWLOCK test_lock;
@@ -39,7 +42,21 @@ struct delayed_work { struct work_struct work; };
 #define to_delayed_work(w) container_of(w, struct delayed_work, work)
 struct hantro_ctx;
 struct hantro_h264_job;
-struct vb2_v4l2_buffer { struct { struct { void *req; } req_obj; } vb2_buf; };
+#define V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE 9
+#define V4L2_H264_SLICE_TYPE_P 0
+#define V4L2_H264_ENCODE_FLAG_ENTROPY_CODING_MODE 1
+#define MB_DIM 16U
+#define MB_WIDTH(x) ((x) / MB_DIM)
+#define MB_HEIGHT(x) ((x) / MB_DIM)
+#define round_up(x, y) (((x) + (y) - 1) & ~((y) - 1))
+struct vb2_buffer { struct { void *req; } req_obj; u64 timestamp; };
+struct vb2_v4l2_buffer { struct vb2_buffer vb2_buf; };
+struct hantro_aux_buf { void *cpu; unsigned int size; };
+struct hantro_enc_buf { struct vb2_v4l2_buffer base; struct hantro_h264_ref h264_ref; struct hantro_aux_buf rec_buf; };
+#define hantro_get_enc_buf(b) ((struct hantro_enc_buf *)(b))
+struct vb2_queue { struct vb2_buffer *slots[2]; unsigned int max_num_buffers; };
+struct v4l2_ctrl_h264_encode_params { unsigned int flags, cabac_init_idc, slice_type; u64 reference_ts; };
+struct hantro_h264_enc_hw_ctx { struct { struct v4l2_ctrl_h264_encode_params *encode; } ctrls; struct hantro_aux_buf cabac_table[3]; };
 struct variant { int num_clocks; };
 struct hantro_dev {
     void *dev, *clocks;
@@ -59,10 +76,19 @@ struct hantro_ctx {
     struct codec_ops *codec_ops;
     struct format *vpu_dst_fmt;
     bool is_encoder, h264_abort;
+    struct hantro_h264_ref_domain h264_refs;
     struct hantro_h264_job *h264_job;
     int ctrl_handler;
-    struct vb2_v4l2_buffer src, dst;
+    struct hantro_enc_buf src, dst, second;
+    struct hantro_enc_buf *destination;
+    struct vb2_queue capture;
+    struct { void *m2m_ctx; } fh;
+    struct { unsigned int width, height; } src_fmt;
+    struct hantro_h264_enc_hw_ctx h264_enc;
 };
+static struct vb2_queue *v4l2_m2m_get_vq(void *m, unsigned int type) { assert(type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE); return m; }
+static struct vb2_buffer *vb2_get_buffer(struct vb2_queue *q, unsigned int i) { assert(held && i < 2); return q->slots[i]; }
+static struct vb2_v4l2_buffer *to_vb2_v4l2_buffer(struct vb2_buffer *b) { return (void *)b; }
 
 static int fail_alloc, fail_pm, fail_clock, fail_run, bad_payload;
 static int allocations, frees, pm_live, clocks_live, completes, finishes, done_calls;
@@ -118,14 +144,14 @@ static bool cancel_delayed_work_sync(struct delayed_work *w)
     if (drain_hook) { void (*h)(void) = drain_hook; drain_hook = NULL; h(); }
     bool pending = w->work.queued; w->work.queued = false; return pending;
 }
-static struct vb2_v4l2_buffer *hantro_get_src_buf(struct hantro_ctx *ctx) { return &ctx->src; }
-static struct vb2_v4l2_buffer *hantro_get_dst_buf(struct hantro_ctx *ctx) { return &ctx->dst; }
+static struct vb2_v4l2_buffer *hantro_get_src_buf(struct hantro_ctx *ctx) { return &ctx->src.base; }
+static struct vb2_v4l2_buffer *hantro_get_dst_buf(struct hantro_ctx *ctx) { return &ctx->destination->base; }
 static int pm_runtime_resume_and_get(void *dev) { (void)dev; if (fail_pm) return -EIO; pm_live++; return 1; }
 static void pm_runtime_put_autosuspend(void *dev) { (void)dev; assert(pm_live == 1); pm_live--; }
 static int clk_bulk_enable(int n, void *clocks) { (void)n; (void)clocks; if (fail_clock) return -EIO; clocks_live++; return 0; }
 static void clk_bulk_disable(int n, void *clocks) { (void)n; (void)clocks; assert(clocks_live == 1); clocks_live--; }
 static void v4l2_m2m_buf_copy_metadata(struct vb2_v4l2_buffer *src, struct vb2_v4l2_buffer *dst)
-{ assert(src && dst && !held); }
+{ assert(src && dst && !held); dst->vb2_buf.timestamp = src->vb2_buf.timestamp; }
 static void v4l2_ctrl_request_complete(void *req, int *handler) {
     assert(req && handler && !held); completes++;
     if (request_complete_hook) request_complete_hook();
@@ -135,6 +161,11 @@ static void hantro_job_finish_no_pm(struct hantro_dev *vpu, struct hantro_ctx *c
 {
     assert(!held && !vpu->h264_job && !ctx->h264_job && !vpu->h264_mmio_live);
     assert(!clocks_live && !pm_live); finishes++; finish_state = state;
+    assert(ctx->destination->h264_ref.valid == (state == VB2_BUF_STATE_DONE));
+    if (state == VB2_BUF_STATE_DONE) {
+        assert(ctx->destination->h264_ref.epoch == ctx->h264_refs.epoch);
+        assert(ctx->destination->h264_ref.timestamp == ctx->src.base.vb2_buf.timestamp);
+    }
     if (finish_hook) { void (*h)(void) = finish_hook; finish_hook = NULL; h(); }
 }
 
@@ -177,7 +208,16 @@ static struct hantro_ctx a, b;
 static void init_ctx(struct hantro_ctx *ctx)
 {
     memset(ctx, 0, sizeof(*ctx)); ctx->dev = &dev; ctx->codec_ops = &ops;
-    ctx->vpu_dst_fmt = &fmt; ctx->is_encoder = true; ctx->src.vb2_buf.req_obj.req = ctx;
+    ctx->vpu_dst_fmt = &fmt; ctx->is_encoder = true; ctx->src.base.vb2_buf.req_obj.req = ctx;
+    ctx->h264_refs.epoch = 1; ctx->src.base.vb2_buf.timestamp = 123;
+    ctx->destination=&ctx->dst; ctx->fh.m2m_ctx=&ctx->capture;
+    ctx->capture.max_num_buffers=2;
+    ctx->capture.slots[0]=&ctx->dst.base.vb2_buf; ctx->capture.slots[1]=&ctx->second.base.vb2_buf;
+    ctx->src_fmt.width=ctx->src_fmt.height=64;
+    ctx->dst.rec_buf.cpu=&ctx->dst; ctx->second.rec_buf.cpu=&ctx->second;
+    ctx->dst.rec_buf.size=ctx->second.rec_buf.size=64*64*3/2;
+    /* A reused destination must be withdrawn even if acquisition fails. */
+    assert(hantro_h264_ref_publish(&ctx->dst.h264_ref, &ctx->h264_refs, 1, 99));
 }
 static void clean(void)
 {
@@ -198,6 +238,11 @@ static void inject_prepare_abort(struct hantro_ctx *ctx)
 static void immediate_completion(void) { irq(&dev, VB2_BUF_STATE_DONE); complete_now(); }
 static void start_a(void) { device_run(&a); }
 static void start_b(void) { device_run(&b); }
+static void check_p_reference(struct hantro_ctx *ctx) {
+    struct hantro_aux_buf *reference=NULL;
+    assert(!rk3399_vpu_h264_enc_prepare_buffers(ctx, hantro_get_dst_buf(ctx), &reference));
+    assert(reference==&ctx->dst.rec_buf);
+}
 static void release_dynamic(void) { free(dev.dev); dev.dev = NULL; }
 static void pause_timeout_after_unlock(void)
 { unlock_hook = NULL; event_set(timeout_entered); event_wait(timeout_release); }
@@ -253,7 +298,7 @@ int main(void)
         if (f == 5) prepare_hook = inject_prepare_abort;
         device_run(&a);
         assert(completes == 1 && finishes == 1 && !starts && !timer_queues && !work_queues);
-        assert(finish_state == VB2_BUF_STATE_ERROR);
+        assert(finish_state == VB2_BUF_STATE_ERROR && a.h264_refs.epoch == 1);
     }
     /* All producer orderings, plus payload validation and late abort. */
     for (int winner = 0; winner < 3; winner++) {
@@ -271,7 +316,19 @@ int main(void)
     clean(); device_run(&a); irq(&dev, VB2_BUF_STATE_DONE); drain_hook = abort_a; complete_now();
     assert(!done_calls && finish_state == VB2_BUF_STATE_ERROR);
     clean(); device_run(&a); irq(&dev, VB2_BUF_STATE_DONE); request_complete_hook = abort_a; complete_now();
-    assert(done_calls == 1 && finish_state == VB2_BUF_STATE_ERROR); /* Reference updates remain a separate gate. */
+    assert(done_calls == 1 && finish_state == VB2_BUF_STATE_ERROR && !a.dst.h264_ref.valid && a.h264_refs.epoch == 2);
+    clean(); device_run(&a); irq(&dev, VB2_BUF_STATE_DONE); complete_now();
+    assert(hantro_h264_ref_matches(&a.dst.h264_ref, &a.h264_refs, 123));
+    assert(!hantro_h264_ref_matches(&a.dst.h264_ref, &a.h264_refs, 99));
+    /* Actual successful completion -> actual P-frame preflight, new destination. */
+    struct v4l2_ctrl_h264_encode_params p={.slice_type=V4L2_H264_SLICE_TYPE_P, .reference_ts=123};
+    a.h264_enc.ctrls.encode=&p; a.destination=&a.second;
+    a.src.base.vb2_buf.timestamp=124; prepare_hook=check_p_reference;
+    device_run(&a); irq(&dev, VB2_BUF_STATE_DONE); complete_now();
+    assert(hantro_h264_ref_matches(&a.second.h264_ref, &a.h264_refs, 124));
+    assert(hantro_h264_ref_matches(&a.dst.h264_ref, &a.h264_refs, 123));
+    clean(); a.h264_refs.exhausted = true; a.h264_refs.epoch = 0;
+    device_run(&a); assert(!starts && finish_state == VB2_BUF_STATE_ERROR);
     /* A real host timeout callback is still active while completion drains it. */
     clean(); device_run(&a); wait_for_timeout = true;
     timeout_entered = event_new(); timeout_release = event_new();
@@ -313,6 +370,6 @@ int main(void)
         assert(completes == 1 && finishes == 1 && finish_state == VB2_BUF_STATE_ERROR);
     }
     clean();
-    puts("15 deterministic actual-path scenarios, one active-timeout drain and 1000 three-producer host-thread races passed; kernel workqueue/MMIO/DMA are mocked.");
+    puts("18 deterministic actual-path scenarios (including completion-to-P-reference), one active-timeout drain and 1000 three-producer host-thread races passed; kernel workqueue/MMIO/DMA are mocked.");
     return 0;
 }

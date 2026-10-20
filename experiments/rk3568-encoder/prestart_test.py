@@ -15,8 +15,9 @@ import subprocess
 
 
 def function(source, name):
-    matches = list(re.finditer(r"(?m)^(?:static )?(?:void|int|unsigned int) "
+    matches = list(re.finditer(r"(?m)^(?:static )?(?:void|int|unsigned int)\s+"
                                + re.escape(name) + r"\(", source))
+    matches = [m for m in matches if source.index("{", m.start()) < source.index(";", m.start())]
     assert len(matches) == 1, name
     start = matches[0].start()
     end = source.index("\n}", start) + 2

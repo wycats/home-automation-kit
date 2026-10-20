@@ -3,11 +3,14 @@
 The maintained Rust client's device-free foundation and verification commands
 are in [CLIENT.md](CLIENT.md). Hardware execution remains disabled.
 
-The latest follow-on is [per-job callback ownership](JOB-LIFETIME.md): immutable
+The latest follow-on is [reconstruction eligibility](REFERENCE-VALIDITY.md):
+only final successful jobs publish references; requeue, cleanup and stream or
+error epochs withdraw them. A contained MMAP capture restriction keeps allocation
+changes out of streaming jobs. This extends [per-job callback ownership](JOB-LIFETIME.md): immutable
 H.264 job storage, one completion worker, a drained per-job watchdog, and an
 abort latch that also covers cancellation before `device_run`. Host tests exercise
-the actual candidate C paths; physical IRQ/DMA quiescence and reference validity
-remain unresolved gates.
+the actual candidate C paths. Physical IRQ/DMA quiescence and hardware reference
+surface correctness remain unresolved gates.
 
 Browser playback needs H.264 derivatives up to 1920x1080 while keeping original
 recordings. This isolates an encoder investigation from the decoder and RAM-root

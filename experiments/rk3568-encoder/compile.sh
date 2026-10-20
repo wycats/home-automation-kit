@@ -51,6 +51,10 @@ python3 "$packet/job_lifetime_test.py" "$work/linux" "$work/job-lifetime-test" \
   --sanitize > "$report/job-lifetime-tests.txt" 2>&1
 mkdir -p "$report/job-lifetime"
 cp "$work/job-lifetime-test/result.json" "$work/job-lifetime-test/job_subject.inc" "$report/job-lifetime/"
+python3 "$packet/reference_test.py" "$work/linux" "$work/reference-test" \
+  --sanitize > "$report/reference-tests.txt" 2>&1
+mkdir -p "$report/reference"
+cp "$work/reference-test/result.json" "$work/reference-test/reference_subject.inc" "$report/reference/"
 git init "$work/client"
 git -C "$work/client" fetch --depth=1 "$(value client repository)" "$(value client commit)"
 git -C "$work/client" checkout --detach FETCH_HEAD

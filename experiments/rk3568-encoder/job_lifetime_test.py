@@ -32,6 +32,13 @@ def main():
     subject = source[:source.index("#include")] + source[start:end]
     subject += function(source, "device_run_h264") + "\n"
     subject += function(source, "device_run") + "\n"
+    h264 = (driver / "hantro_h264.c").read_text()
+    codec_source = (driver / "rockchip_vpu_hw_h264_enc.c").read_text()
+    subject += h264[:h264.index("#include")]
+    subject += function(h264, "hantro_h264_enc_rec_luma_size") + "\n"
+    subject += function(h264, "hantro_h264_enc_rec_image_size") + "\n"
+    subject += codec_source[:codec_source.index("#include")]
+    subject += function(codec_source, "rk3399_vpu_h264_enc_prepare_buffers") + "\n"
     (args.output / "job_subject.inc").write_text(subject, newline="\n")
     codec = (driver / "rockchip_vpu_hw_h264_enc.c").read_text()
     tail = function(codec, "rk3399_vpu_h264_enc_run").split(
@@ -57,7 +64,11 @@ def main():
     if not cc and os.name == "nt":
         cc = "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/ARM64/bin/clang.exe"
     binary = args.output / ("job-lifetime-test.exe" if os.name == "nt" else "job-lifetime-test")
-    command = [cc, "-std=c11", "-O1", "-Wall", "-Wextra", "-Werror", "-I", str(args.output)]
+    shim = args.output / "host-shims/linux"
+    shim.mkdir(parents=True, exist_ok=True)
+    (shim / "types.h").write_text("#include <stdint.h>\ntypedef uint64_t __u64;\n")
+    command = [cc, "-std=c11", "-O1", "-Wall", "-Wextra", "-Werror",
+               "-I", str(shim.parent), "-I", str(driver), "-I", str(args.output)]
     if os.name == "nt":
         command += ["-Xlinker", "/MANIFEST:EMBED", "-Xlinker",
                     "/MANIFESTUAC:level='asInvoker' uiAccess='false'"]
