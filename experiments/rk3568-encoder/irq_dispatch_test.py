@@ -50,6 +50,7 @@ def main():
     prefix = r'''
 #include <assert.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #define BIT(n) (1U << (n))
 typedef uint32_t u32;
@@ -58,12 +59,14 @@ enum { IRQ_HANDLED = 1, IRQ_WAKE_THREAD = 2, HANTRO_MODE_H264_ENC = 7 };
 enum vb2_buffer_state { VB2_BUF_STATE_DONE = 3, VB2_BUF_STATE_ERROR = 4 };
 struct hantro_fmt { int codec_mode; };
 struct hantro_ctx { struct hantro_fmt *vpu_dst_fmt; enum vb2_buffer_state result; };
-struct hantro_dev { void *m2m_dev; };
-static struct hantro_ctx *current;
+struct hantro_dev { int irqlock; bool h264_irq_mode, h264_mmio_live; };
+static int held, claims;
+#define spin_lock_irqsave(l, f) do { (void)(l); (f) = 0; assert(!held); held++; } while (0)
+#define spin_unlock_irqrestore(l, f) do { (void)(l); (void)(f); assert(held == 1); held--; } while (0)
 static u32 status_in, write_regs[2], write_vals[2];
 static int writes, done_calls;
 static enum vb2_buffer_state done_state;
-static void *v4l2_m2m_get_curr_priv(void *unused) { (void)unused; return current; }
+
 static u32 vepu_read(struct hantro_dev *unused, u32 reg) { (void)unused; (void)reg; return status_in; }
 static void vepu_write(struct hantro_dev *unused, u32 value, u32 reg) {
     (void)unused; assert(writes < 2); write_regs[writes] = reg; write_vals[writes++] = value;
@@ -71,12 +74,14 @@ static void vepu_write(struct hantro_dev *unused, u32 value, u32 reg) {
 static void hantro_irq_done(struct hantro_dev *unused, enum vb2_buffer_state state) {
     (void)unused; done_calls++; done_state = state;
 }
+static void hantro_h264_enc_irq_locked(struct hantro_dev *unused, enum vb2_buffer_state state) {
+    (void)unused; assert(held); claims++; done_state = state;
+}
 '''
     checks = r'''
 int main(void) {
     struct hantro_dev device = {0};
-    struct hantro_fmt format = {0};
-    struct hantro_ctx context = { .vpu_dst_fmt = &format };
+
     unsigned cases = 0;
     const u32 bits[] = { VEPU_REG_INTERRUPT_FRAME_READY, VEPU_REG_INTERRUPT_TIMEOUT,
                         VEPU_REG_INTERRUPT_BUFFER_FULL, VEPU_REG_INTERRUPT_BUS_ERROR };
@@ -84,27 +89,28 @@ int main(void) {
         status_in = 0;
         for (unsigned i = 0; i < 4; i++) if (mask & (1U << i)) status_in |= bits[i];
         for (int kind = 0; kind < 3; kind++) {
-            current = kind == 0 ? NULL : &context;
-            format.codec_mode = kind == 2 ? HANTRO_MODE_H264_ENC : 0;
-            context.result = 99;
-            writes = done_calls = 0;
+            device.h264_irq_mode = kind != 1;
+            device.h264_mmio_live = kind == 2;
+            claims = writes = done_calls = 0;
             int result = rockchip_vpu2_vepu_irq(0, &device);
-            assert(writes == 2 && write_vals[0] == 0 && write_vals[1] == 0);
-            assert(write_regs[0] == VEPU_REG_INTERRUPT && write_regs[1] == VEPU_REG_AXI_CTRL);
+            if (kind) {
+                assert(writes == 2 && write_vals[0] == 0 && write_vals[1] == 0);
+                assert(write_regs[0] == VEPU_REG_INTERRUPT && write_regs[1] == VEPU_REG_AXI_CTRL);
+            } else assert(writes == 0);
             if (kind == 0) {
-                assert(result == IRQ_HANDLED && done_calls == 0);
+                assert(result == IRQ_HANDLED && done_calls == 0 && claims == 0);
             } else if (kind == 1) {
-                assert(result == IRQ_HANDLED && done_calls == 1 && context.result == 99);
+                assert(result == IRQ_HANDLED && done_calls == 1 && claims == 0);
                 assert(done_state == ((mask & 1) ? VB2_BUF_STATE_DONE : VB2_BUF_STATE_ERROR));
             } else {
-                assert(result == IRQ_WAKE_THREAD && done_calls == 0);
-                assert(context.result == (mask == 1 ? VB2_BUF_STATE_DONE : VB2_BUF_STATE_ERROR));
+                assert(result == IRQ_HANDLED && done_calls == 0 && claims == 1);
+                assert(done_state == (mask == 1 ? VB2_BUF_STATE_DONE : VB2_BUF_STATE_ERROR));
             }
             cases++;
         }
     }
     for (int ready = 0; ready < 2; ready++) {
-        current = NULL; writes = done_calls = 0;
+        writes = done_calls = 0;
         status_in = ready ? H1_REG_INTERRUPT_FRAME_RDY : 0;
         assert(rockchip_vpu1_vepu_irq(0, &device) == IRQ_HANDLED);
         assert(done_calls == 1 && done_state == (ready ? VB2_BUF_STATE_DONE : VB2_BUF_STATE_ERROR));
