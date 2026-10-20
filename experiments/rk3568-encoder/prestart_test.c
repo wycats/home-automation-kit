@@ -10,6 +10,8 @@
 #include <string.h>
 #include "hantro_h264_enc_validate.h"
 
+typedef uint64_t u64;
+#include "hantro_h264_enc_ref.h"
 typedef uint32_t u32;
 typedef int32_t s32;
 typedef uint8_t u8;
@@ -40,11 +42,11 @@ static void kfree(void *p) { free(p); }
 struct hantro_h264_job;
 struct hantro_ctx;
 struct request_object { void *req; };
-struct vb2_buffer { struct request_object req_obj; };
+struct vb2_buffer { struct request_object req_obj; u64 timestamp; };
 struct vb2_v4l2_buffer { struct vb2_buffer vb2_buf; };
 struct vb2_queue { int unused; };
 struct hantro_aux_buf { void *cpu; unsigned long size; uint64_t dma; };
-struct hantro_enc_buf { struct vb2_v4l2_buffer base; struct hantro_aux_buf rec_buf; };
+struct hantro_enc_buf { struct vb2_v4l2_buffer base; struct hantro_aux_buf rec_buf; struct hantro_h264_ref h264_ref; };
 struct hantro_h264_enc_ctrls {
     const struct v4l2_ctrl_h264_encode_params *encode;
     const struct v4l2_ctrl_h264_encode_rc *rc;
@@ -65,6 +67,7 @@ struct hantro_ctx {
     struct codec_ops *codec_ops;
     struct format *vpu_dst_fmt;
     bool is_encoder, h264_abort;
+    struct hantro_h264_ref_domain h264_refs;
     struct hantro_h264_job *h264_job;
     struct hantro_h264_enc_hw_ctx h264_enc;
     struct v4l2_pix_format_mplane src_fmt;
@@ -124,9 +127,11 @@ static void *hantro_get_ctrl(struct hantro_ctx *ctx, u32 id)
 }
 static struct vb2_queue *v4l2_m2m_get_vq(void *ctx, unsigned int type)
 { (void)ctx; assert(type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE); return &capture_queue; }
-static struct vb2_buffer *vb2_find_buffer(struct vb2_queue *q, uint64_t timestamp)
+static unsigned int vb2_get_max_num_buffers(struct vb2_queue *q)
+{ assert(q == &capture_queue); return 1; }
+static struct vb2_buffer *vb2_get_buffer(struct vb2_queue *q, unsigned int i)
 {
-    assert(q == &capture_queue && timestamp == params.reference_ts);
+    assert(q == &capture_queue && i == 0);
     if (reference_kind == 0) return NULL;
     return reference_kind == 1 ? &destination.base.vb2_buf : &reference.base.vb2_buf;
 }
@@ -154,6 +159,9 @@ static void reset(struct hantro_ctx *ctx)
     memset(&params, 0, sizeof(params)); params.slice_type = V4L2_H264_SLICE_TYPE_I;
     memset(&rate, 0, sizeof(rate)); rate.qp = 26; rate.qp_max = 51;
     ctx->src_fmt.width = 640; ctx->src_fmt.height = 480;
+    ctx->h264_refs = (struct hantro_h264_ref_domain){ .epoch = 1 };
+    assert(hantro_h264_ref_publish(&reference.h264_ref, &ctx->h264_refs, 1, params.reference_ts));
+    assert(hantro_h264_ref_publish(&destination.h264_ref, &ctx->h264_refs, 1, params.reference_ts));
     memset(&ctx->h264_enc, 0, sizeof(ctx->h264_enc));
     ctx->is_encoder = true; ctx->vpu_dst_fmt->codec_mode = HANTRO_MODE_H264_ENC;
     ctx->codec_ops->run = rk3399_vpu_h264_enc_run;
@@ -165,6 +173,7 @@ static void expect_error(struct hantro_ctx *ctx, const char *expected)
     assert(strcmp(trace, expected) == 0);
     assert(request_completions == 1 && finishes == 1);
     assert(!live_pm && !live_clocks && !starts && !watches);
+    assert(!destination.h264_ref.valid && reference.h264_ref.valid && ctx->h264_refs.epoch == 1);
 }
 
 int main(void)

@@ -20,7 +20,7 @@ index f6f019d..3162667 100644
  		rockchip_vpu2_hw_mpeg2_dec.o \
  		rockchip_vpu2_hw_vp8_dec.o \
 diff --git a/drivers/media/platform/verisilicon/hantro.h b/drivers/media/platform/verisilicon/hantro.h
-index 0353de1..cd1412d 100644
+index 0353de1..0a095fe 100644
 --- a/drivers/media/platform/verisilicon/hantro.h
 +++ b/drivers/media/platform/verisilicon/hantro.h
 @@ -32,6 +32,7 @@ struct hantro_codec_ops;
@@ -80,7 +80,7 @@ index 0353de1..cd1412d 100644
  };
  
  /**
-@@ -271,12 +282,15 @@ struct hantro_ctx {
+@@ -271,12 +282,16 @@ struct hantro_ctx {
  	/* Specific for particular codec modes. */
  	union {
  		struct hantro_h264_dec_hw_ctx h264_dec;
@@ -93,10 +93,11 @@ index 0353de1..cd1412d 100644
  	};
 +	struct hantro_h264_job *h264_job;
 +	bool h264_abort;
++	struct hantro_h264_ref_domain h264_refs;
  };
  
  /**
-@@ -499,6 +513,17 @@ vb2_to_hantro_decoded_buf(struct vb2_buffer *buf)
+@@ -499,6 +514,17 @@ vb2_to_hantro_decoded_buf(struct vb2_buffer *buf)
  {
  	return container_of(buf, struct hantro_decoded_buffer, base.vb.vb2_buf);
  }
@@ -114,7 +115,7 @@ index 0353de1..cd1412d 100644
  
  void hantro_postproc_disable(struct hantro_ctx *ctx);
  void hantro_postproc_enable(struct hantro_ctx *ctx);
-@@ -507,4 +532,9 @@ void hantro_postproc_free(struct hantro_ctx *ctx);
+@@ -507,4 +533,9 @@ void hantro_postproc_free(struct hantro_ctx *ctx);
  int hanto_postproc_enum_framesizes(struct hantro_ctx *ctx,
  				   struct v4l2_frmsizeenum *fsize);
  
@@ -125,10 +126,10 @@ index 0353de1..cd1412d 100644
 +
  #endif /* HANTRO_H_ */
 diff --git a/drivers/media/platform/verisilicon/hantro_drv.c b/drivers/media/platform/verisilicon/hantro_drv.c
-index 2e81877..bf2ebed 100644
+index 2e81877..b6abdde 100644
 --- a/drivers/media/platform/verisilicon/hantro_drv.c
 +++ b/drivers/media/platform/verisilicon/hantro_drv.c
-@@ -97,6 +97,138 @@ static void hantro_job_finish(struct hantro_dev *vpu,
+@@ -97,6 +97,152 @@ static void hantro_job_finish(struct hantro_dev *vpu,
  	hantro_job_finish_no_pm(vpu, ctx, result);
  }
  
@@ -149,6 +150,8 @@ index 2e81877..bf2ebed 100644
 +	struct hantro_ctx *ctx;
 +	struct vb2_v4l2_buffer *src;
 +	struct vb2_v4l2_buffer *dst;
++	u64 ref_epoch;
++	u64 timestamp;
 +	struct delayed_work watchdog;
 +	struct work_struct completion_work;
 +	enum hantro_h264_job_owner owner;
@@ -193,6 +196,18 @@ index 2e81877..bf2ebed 100644
 +	spin_lock_irqsave(&vpu->irqlock, flags);
 +	if (ctx->h264_abort)
 +		result = VB2_BUF_STATE_ERROR;
++	/* Publish only after the last abort decision, never from codec ->done().
++	 * A failed started job invalidates the whole recovery epoch. Rejected
++	 * pre-start requests invalidate only their destination in device_run.
++	 */
++	if (result == VB2_BUF_STATE_DONE &&
++	    !hantro_h264_ref_publish(&hantro_get_enc_buf(job->dst)->h264_ref,
++				    &ctx->h264_refs, job->ref_epoch, job->timestamp))
++		result = VB2_BUF_STATE_ERROR;
++	if (result != VB2_BUF_STATE_DONE) {
++		hantro_h264_ref_invalidate(&hantro_get_enc_buf(job->dst)->h264_ref);
++		hantro_h264_ref_advance(&ctx->h264_refs);
++	}
 +	/* The existing VEPU2 reset writes IRQ-disable, ENCODE_START=0 and AXI=0.
 +	 * Serialize those writes against IRQ MMIO, then prevent further accesses
 +	 * before releasing clocks. This is NOT a demonstrated DMA-idle fence.
@@ -267,7 +282,7 @@ index 2e81877..bf2ebed 100644
  void hantro_irq_done(struct hantro_dev *vpu,
  		     enum vb2_buffer_state result)
  {
-@@ -131,6 +263,13 @@ void hantro_watchdog(struct work_struct *work)
+@@ -131,6 +277,13 @@ void hantro_watchdog(struct work_struct *work)
  	}
  }
  
@@ -281,7 +296,7 @@ index 2e81877..bf2ebed 100644
  void hantro_start_prepare_run(struct hantro_ctx *ctx)
  {
  	struct vb2_v4l2_buffer *src_buf;
-@@ -162,17 +301,91 @@ void hantro_end_prepare_run(struct hantro_ctx *ctx)
+@@ -162,17 +315,98 @@ void hantro_end_prepare_run(struct hantro_ctx *ctx)
  	v4l2_ctrl_request_complete(src_buf->vb2_buf.req_obj.req,
  				   &ctx->ctrl_handler);
  
@@ -303,6 +318,10 @@ index 2e81877..bf2ebed 100644
 +	unsigned long flags;
 +	int ret;
 +
++	/* Also withdraw a reused destination if allocation/acquisition fails. */
++	spin_lock_irqsave(&vpu->irqlock, flags);
++	hantro_h264_ref_invalidate(&hantro_get_enc_buf(dst)->h264_ref);
++	spin_unlock_irqrestore(&vpu->irqlock, flags);
 +	job = kzalloc(sizeof(*job), GFP_KERNEL);
 +	if (!job)
 +		goto err_cancel_job;
@@ -315,7 +334,10 @@ index 2e81877..bf2ebed 100644
 +	spin_lock_irqsave(&vpu->irqlock, flags);
 +	ctx->h264_job = job;
 +	vpu->h264_job = job;
-+	ret = ctx->h264_abort ? -ECANCELED : 0;
++	job->ref_epoch = ctx->h264_refs.epoch;
++	job->timestamp = src->vb2_buf.timestamp;
++	ret = ctx->h264_abort || ctx->h264_refs.exhausted || !job->ref_epoch ?
++		-ECANCELED : 0;
 +	spin_unlock_irqrestore(&vpu->irqlock, flags);
 +	if (ret)
 +		goto err_cancel_job;
@@ -376,7 +398,7 @@ index 2e81877..bf2ebed 100644
  	src = hantro_get_src_buf(ctx);
  	dst = hantro_get_dst_buf(ctx);
  
-@@ -197,6 +410,7 @@ err_cancel_job:
+@@ -197,6 +431,7 @@ err_cancel_job:
  
  static const struct v4l2_m2m_ops vpu_m2m_ops = {
  	.device_run = device_run,
@@ -384,7 +406,7 @@ index 2e81877..bf2ebed 100644
  };
  
  static int
-@@ -224,6 +438,7 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
+@@ -224,6 +459,7 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
  	src_vq->dev = ctx->dev->v4l2_dev.dev;
  	src_vq->supports_requests = true;
  
@@ -392,7 +414,7 @@ index 2e81877..bf2ebed 100644
  	ret = vb2_queue_init(src_vq);
  	if (ret)
  		return ret;
-@@ -244,7 +459,8 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
+@@ -244,7 +480,8 @@ queue_init(void *priv, struct vb2_queue *src_vq, struct vb2_queue *dst_vq)
  	dst_vq->io_modes = VB2_MMAP | VB2_DMABUF;
  	dst_vq->drv_priv = ctx;
  	dst_vq->ops = &hantro_queue_ops;
@@ -402,7 +424,7 @@ index 2e81877..bf2ebed 100644
  	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
  	dst_vq->lock = &ctx->dev->vpu_mutex;
  	dst_vq->dev = ctx->dev->v4l2_dev.dev;
-@@ -439,6 +655,23 @@ static const struct hantro_ctrl controls[] = {
+@@ -439,6 +676,23 @@ static const struct hantro_ctrl controls[] = {
  			 */
  			.flags = V4L2_CTRL_FLAG_READ_ONLY,
  		},
@@ -426,7 +448,7 @@ index 2e81877..bf2ebed 100644
  	}, {
  		.codec = HANTRO_MPEG2_DECODER,
  		.cfg = {
-@@ -1181,9 +1414,15 @@ static int hantro_probe(struct platform_device *pdev)
+@@ -1181,9 +1435,15 @@ static int hantro_probe(struct platform_device *pdev)
  		if (irq < 0)
  			return irq;
  
@@ -1260,6 +1282,69 @@ index 2414782..aab2641 100644
 +
 +	return ret;
 +}
+diff --git a/drivers/media/platform/verisilicon/hantro_h264_enc_ref.h b/drivers/media/platform/verisilicon/hantro_h264_enc_ref.h
+new file mode 100644
+index 0000000..fa4387e
+--- /dev/null
++++ b/drivers/media/platform/verisilicon/hantro_h264_enc_ref.h
+@@ -0,0 +1,57 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/* Reconstruction eligibility only; this is not a DMA lifetime/idle fence.
++ * All accesses are serialized by the owning device's irqlock.
++ */
++#ifndef HANTRO_H264_ENC_REF_H_
++#define HANTRO_H264_ENC_REF_H_
++
++#include <linux/types.h>
++
++struct hantro_h264_ref_domain {
++	__u64 epoch;
++	bool exhausted;
++};
++
++struct hantro_h264_ref {
++	__u64 epoch;
++	__u64 timestamp;
++	bool valid;
++};
++
++static inline void hantro_h264_ref_invalidate(struct hantro_h264_ref *ref)
++{
++	ref->valid = false;
++}
++
++static inline bool hantro_h264_ref_advance(struct hantro_h264_ref_domain *domain)
++{
++	if (domain->exhausted)
++		return false;
++	if (++domain->epoch == 0) {
++		domain->exhausted = true;
++		return false;
++	}
++	return true;
++}
++
++static inline bool hantro_h264_ref_matches(const struct hantro_h264_ref *ref,
++		const struct hantro_h264_ref_domain *domain, __u64 timestamp)
++{
++	return !domain->exhausted && domain->epoch && ref->valid &&
++	       ref->epoch == domain->epoch && ref->timestamp == timestamp;
++}
++
++static inline bool hantro_h264_ref_publish(struct hantro_h264_ref *ref,
++		const struct hantro_h264_ref_domain *domain, __u64 epoch,
++		__u64 timestamp)
++{
++	hantro_h264_ref_invalidate(ref);
++	if (domain->exhausted || !epoch || epoch != domain->epoch)
++		return false;
++	ref->timestamp = timestamp;
++	ref->epoch = epoch;
++	ref->valid = true;
++	return true;
++}
++
++#endif
 diff --git a/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h b/drivers/media/platform/verisilicon/hantro_h264_enc_validate.h
 new file mode 100644
 index 0000000..4ae5a01
@@ -1321,10 +1406,10 @@ index 0000000..4ae5a01
 +}
 +#endif
 diff --git a/drivers/media/platform/verisilicon/hantro_hw.h b/drivers/media/platform/verisilicon/hantro_hw.h
-index 13e573f..d34ddba 100644
+index 13e573f..88c7ad9 100644
 --- a/drivers/media/platform/verisilicon/hantro_hw.h
 +++ b/drivers/media/platform/verisilicon/hantro_hw.h
-@@ -11,6 +11,7 @@
+@@ -11,10 +11,12 @@
  
  #include <linux/interrupt.h>
  #include <linux/v4l2-controls.h>
@@ -1332,13 +1417,19 @@ index 13e573f..d34ddba 100644
  #include <media/v4l2-ctrls.h>
  #include <media/v4l2-vp9.h>
  #include <media/videobuf2-core.h>
-@@ -69,6 +70,25 @@ struct hantro_aux_buf {
+ 
++#include "hantro_h264_enc_ref.h"
+ #include "rockchip_av1_entropymode.h"
+ #include "rockchip_av1_filmgrain.h"
+ 
+@@ -69,6 +71,26 @@ struct hantro_aux_buf {
  	unsigned long attrs;
  };
  
 +struct hantro_enc_buf {
 +	struct v4l2_m2m_buffer m2m_buf;
 +	struct hantro_aux_buf rec_buf;
++	struct hantro_h264_ref h264_ref;
 +};
 +
 +struct hantro_h264_enc_ctrls {
@@ -1358,7 +1449,7 @@ index 13e573f..d34ddba 100644
  /* Max. number of entries in the DPB (HW limitation). */
  #define HANTRO_H264_DPB_SIZE		16
  
-@@ -440,6 +460,17 @@ int rockchip_vpu2_jpeg_enc_run(struct hantro_ctx *ctx);
+@@ -440,6 +462,17 @@ int rockchip_vpu2_jpeg_enc_run(struct hantro_ctx *ctx);
  void hantro_h1_jpeg_enc_done(struct hantro_ctx *ctx);
  void rockchip_vpu2_jpeg_enc_done(struct hantro_ctx *ctx);
  
@@ -1377,7 +1468,7 @@ index 13e573f..d34ddba 100644
  				   unsigned int dpb_idx);
  u16 hantro_h264_get_ref_nbr(struct hantro_ctx *ctx,
 diff --git a/drivers/media/platform/verisilicon/hantro_v4l2.c b/drivers/media/platform/verisilicon/hantro_v4l2.c
-index 83af9fa..d4ce036 100644
+index 83af9fa..198191c 100644
 --- a/drivers/media/platform/verisilicon/hantro_v4l2.c
 +++ b/drivers/media/platform/verisilicon/hantro_v4l2.c
 @@ -551,10 +551,11 @@ static int hantro_set_fmt_out(struct hantro_ctx *ctx,
@@ -1416,10 +1507,95 @@ index 83af9fa..d4ce036 100644
  			return -EBUSY;
  	}
  
-@@ -858,6 +856,32 @@ hantro_buf_plane_check(struct vb2_buffer *vb,
+@@ -765,6 +763,54 @@ static int vidioc_encoder_cmd(struct file *file, void *priv,
  	return 0;
  }
  
++/* Keep H.264 reconstruction allocations stable until STREAMOFF drains jobs.
++ * In particular vb2 REMOVE_BUFS permits removal of DEQUEUED references even
++ * while streaming, and imported CAPTURE memory can re-enter buf_cleanup.
++ * This lab restriction does not apply to raw OUTPUT, JPEG or decoders.
++ */
++static int hantro_h264_capture_allocation(struct hantro_ctx *ctx,
++		unsigned int type, unsigned int memory, unsigned int count,
++		bool resize)
++{
++	if (!count || !ctx->is_encoder ||
++	    ctx->vpu_dst_fmt->codec_mode != HANTRO_MODE_H264_ENC ||
++	    type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
++		return 0;
++	if (memory && memory != V4L2_MEMORY_MMAP)
++		return -EINVAL;
++	if (resize && (vb2_is_streaming(v4l2_m2m_get_src_vq(ctx->fh.m2m_ctx)) ||
++		       vb2_is_streaming(v4l2_m2m_get_dst_vq(ctx->fh.m2m_ctx))))
++		return -EBUSY;
++	return 0;
++}
++
++static int hantro_reqbufs(struct file *file, void *priv,
++			 struct v4l2_requestbuffers *req)
++{
++	int ret = hantro_h264_capture_allocation(file_to_ctx(file), req->type,
++					       req->memory, req->count, false);
++
++	return ret ?: v4l2_m2m_ioctl_reqbufs(file, priv, req);
++}
++
++static int hantro_create_bufs(struct file *file, void *priv,
++			     struct v4l2_create_buffers *create)
++{
++	int ret = hantro_h264_capture_allocation(file_to_ctx(file), create->format.type,
++					       create->memory, create->count, true);
++
++	return ret ?: v4l2_m2m_ioctl_create_bufs(file, priv, create);
++}
++
++static int hantro_remove_bufs(struct file *file, void *priv,
++			     struct v4l2_remove_buffers *remove)
++{
++	int ret = hantro_h264_capture_allocation(file_to_ctx(file), remove->type,
++					       0, remove->count, true);
++
++	return ret ?: v4l2_m2m_ioctl_remove_bufs(file, priv, remove);
++}
++
+ const struct v4l2_ioctl_ops hantro_ioctl_ops = {
+ 	.vidioc_querycap = vidioc_querycap,
+ 	.vidioc_enum_framesizes = vidioc_enum_framesizes,
+@@ -778,13 +824,13 @@ const struct v4l2_ioctl_ops hantro_ioctl_ops = {
+ 	.vidioc_enum_fmt_vid_out = vidioc_enum_fmt_vid_out,
+ 	.vidioc_enum_fmt_vid_cap = vidioc_enum_fmt_vid_cap,
+ 
+-	.vidioc_reqbufs = v4l2_m2m_ioctl_reqbufs,
++	.vidioc_reqbufs = hantro_reqbufs,
+ 	.vidioc_querybuf = v4l2_m2m_ioctl_querybuf,
+ 	.vidioc_qbuf = v4l2_m2m_ioctl_qbuf,
+ 	.vidioc_dqbuf = v4l2_m2m_ioctl_dqbuf,
+ 	.vidioc_prepare_buf = v4l2_m2m_ioctl_prepare_buf,
+-	.vidioc_create_bufs = v4l2_m2m_ioctl_create_bufs,
+-	.vidioc_remove_bufs = v4l2_m2m_ioctl_remove_bufs,
++	.vidioc_create_bufs = hantro_create_bufs,
++	.vidioc_remove_bufs = hantro_remove_bufs,
+ 	.vidioc_expbuf = v4l2_m2m_ioctl_expbuf,
+ 
+ 	.vidioc_subscribe_event = v4l2_ctrl_subscribe_event,
+@@ -858,6 +904,46 @@ hantro_buf_plane_check(struct vb2_buffer *vb,
+ 	return 0;
+ }
+ 
++static void hantro_h264_invalidate_buffer(struct vb2_buffer *vb)
++{
++	struct hantro_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
++	unsigned long flags;
++
++	if (!ctx->is_encoder || V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type) ||
++	    ctx->vpu_dst_fmt->codec_mode != HANTRO_MODE_H264_ENC)
++		return;
++	spin_lock_irqsave(&ctx->dev->irqlock, flags);
++	hantro_h264_ref_invalidate(&hantro_get_enc_buf(to_vb2_v4l2_buffer(vb))->h264_ref);
++	spin_unlock_irqrestore(&ctx->dev->irqlock, flags);
++}
++
 +static int hantro_buf_init(struct vb2_buffer *vb)
 +{
 +	struct vb2_queue *vq = vb->vb2_queue;
@@ -1436,6 +1612,7 @@ index 83af9fa..d4ce036 100644
 +	enc_buf = hantro_get_enc_buf(vbuf);
 +	rec_buf = &enc_buf->rec_buf;
 +
++	hantro_h264_invalidate_buffer(vb);
 +	rec_buf->size = hantro_h264_enc_rec_image_size(ctx->src_fmt.width,
 +						       ctx->src_fmt.height);
 +	rec_buf->cpu = dma_alloc_coherent(vpu->dev, rec_buf->size,
@@ -1449,7 +1626,24 @@ index 83af9fa..d4ce036 100644
  static int hantro_buf_prepare(struct vb2_buffer *vb)
  {
  	struct vb2_queue *vq = vb->vb2_queue;
-@@ -911,6 +935,29 @@ static void hantro_buf_queue(struct vb2_buffer *vb)
+@@ -869,6 +955,7 @@ static int hantro_buf_prepare(struct vb2_buffer *vb)
+ 		pix_fmt = &ctx->src_fmt;
+ 	else
+ 		pix_fmt = &ctx->dst_fmt;
++	hantro_h264_invalidate_buffer(vb);
+ 	ret = hantro_buf_plane_check(vb, pix_fmt);
+ 	if (ret)
+ 		return ret;
+@@ -892,6 +979,8 @@ static void hantro_buf_queue(struct vb2_buffer *vb)
+ 	struct hantro_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
+ 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+ 
++	/* PREPARE_BUF can precede QBUF; withdraw again at actual reuse. */
++	hantro_h264_invalidate_buffer(vb);
+ 	if (V4L2_TYPE_IS_CAPTURE(vb->vb2_queue->type) &&
+ 	    vb2_is_streaming(vb->vb2_queue) &&
+ 	    v4l2_m2m_dst_buf_is_last(ctx->fh.m2m_ctx)) {
+@@ -911,6 +1000,30 @@ static void hantro_buf_queue(struct vb2_buffer *vb)
  	v4l2_m2m_buf_queue(ctx->fh.m2m_ctx, vbuf);
  }
  
@@ -1468,6 +1662,7 @@ index 83af9fa..d4ce036 100644
 +	enc_buf = hantro_get_enc_buf(vbuf);
 +	rec_buf = &enc_buf->rec_buf;
 +
++	hantro_h264_invalidate_buffer(vb);
 +	if (rec_buf->cpu)
 +		dma_free_coherent(vpu->dev, rec_buf->size, rec_buf->cpu,
 +				  rec_buf->dma);
@@ -1479,7 +1674,7 @@ index 83af9fa..d4ce036 100644
  static bool hantro_vq_is_coded(struct vb2_queue *q)
  {
  	struct hantro_ctx *ctx = vb2_get_drv_priv(q);
-@@ -921,8 +968,15 @@ static bool hantro_vq_is_coded(struct vb2_queue *q)
+@@ -921,8 +1034,19 @@ static bool hantro_vq_is_coded(struct vb2_queue *q)
  static int hantro_start_streaming(struct vb2_queue *q, unsigned int count)
  {
  	struct hantro_ctx *ctx = vb2_get_drv_priv(q);
@@ -1490,12 +1685,30 @@ index 83af9fa..d4ce036 100644
 +	if (ctx->is_encoder && ctx->vpu_dst_fmt->codec_mode == HANTRO_MODE_H264_ENC) {
 +		spin_lock_irqsave(&ctx->dev->irqlock, flags);
 +		ctx->h264_abort = false;
++		if (!hantro_h264_ref_advance(&ctx->h264_refs))
++			ret = -EOVERFLOW;
 +		spin_unlock_irqrestore(&ctx->dev->irqlock, flags);
++		if (ret)
++			return ret;
 +	}
  	v4l2_m2m_update_start_streaming_state(ctx->fh.m2m_ctx, q);
  
  	if (V4L2_TYPE_IS_OUTPUT(q->type))
-@@ -1022,6 +1076,8 @@ static int hantro_buf_out_validate(struct vb2_buffer *vb)
+@@ -981,6 +1105,13 @@ hantro_return_bufs(struct vb2_queue *q,
+ static void hantro_stop_streaming(struct vb2_queue *q)
+ {
+ 	struct hantro_ctx *ctx = vb2_get_drv_priv(q);
++	unsigned long flags;
++
++	if (ctx->is_encoder && ctx->vpu_dst_fmt->codec_mode == HANTRO_MODE_H264_ENC) {
++		spin_lock_irqsave(&ctx->dev->irqlock, flags);
++		hantro_h264_ref_advance(&ctx->h264_refs);
++		spin_unlock_irqrestore(&ctx->dev->irqlock, flags);
++	}
+ 
+ 	if (hantro_vq_is_coded(q)) {
+ 		hantro_postproc_free(ctx);
+@@ -1022,6 +1153,8 @@ static int hantro_buf_out_validate(struct vb2_buffer *vb)
  
  const struct vb2_ops hantro_queue_ops = {
  	.queue_setup = hantro_queue_setup,
@@ -1706,10 +1919,10 @@ index 02673be..e97e5b0 100644
  	.num_irqs = ARRAY_SIZE(rk3568_vepu_irqs),
 diff --git a/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
 new file mode 100644
-index 0000000..bd58c7f
+index 0000000..8022476
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
-@@ -0,0 +1,526 @@
+@@ -0,0 +1,548 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Hantro VPU codec driver
@@ -1877,6 +2090,9 @@ index 0000000..bd58c7f
 +							  ctx->src_fmt.height);
 +	struct vb2_buffer *buf;
 +	struct vb2_queue *queue;
++	unsigned long flags;
++	unsigned int i;
++	int ret = -EINVAL;
 +
 +	*reference = NULL;
 +	if (!rec->cpu || rec->size < needed)
@@ -1889,14 +2105,33 @@ index 0000000..bd58c7f
 +
 +	queue = v4l2_m2m_get_vq(ctx->fh.m2m_ctx,
 +			      V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-+	buf = vb2_find_buffer(queue, p->reference_ts);
-+	if (!buf || buf == &dst->vb2_buf)
-+		return -EINVAL;
-+	rec = &hantro_get_enc_buf(to_vb2_v4l2_buffer(buf))->rec_buf;
-+	if (!rec->cpu || rec->size < needed)
-+		return -EINVAL;
-+	*reference = rec;
-+	return 0;
++	/* CAPTURE MMAP allocation is fixed while either queue streams. QBUF
++	 * can withdraw eligibility under this lock, but cannot free or mutate
++	 * the reconstruction held by the one active hardware job.
++	 */
++	spin_lock_irqsave(&ctx->dev->irqlock, flags);
++	for (i = 0; i < vb2_get_max_num_buffers(queue); i++) {
++		struct hantro_enc_buf *enc;
++
++		buf = vb2_get_buffer(queue, i);
++		if (!buf)
++			continue;
++		enc = hantro_get_enc_buf(to_vb2_v4l2_buffer(buf));
++		if (!hantro_h264_ref_matches(&enc->h264_ref, &ctx->h264_refs,
++					    p->reference_ts))
++			continue;
++		if (buf == &dst->vb2_buf || *reference ||
++		    !enc->rec_buf.cpu || enc->rec_buf.size < needed)
++			goto out;
++		*reference = &enc->rec_buf;
++	}
++	if (*reference)
++		ret = 0;
++out:
++	if (ret)
++		*reference = NULL;
++	spin_unlock_irqrestore(&ctx->dev->irqlock, flags);
++	return ret;
 +}
 +
 +int rk3399_vpu_h264_enc_run(struct hantro_ctx *ctx)
