@@ -1,0 +1,28 @@
+{
+  "scope": "Compile-only encoder prototype; no bootable artifact or hardware execution",
+  "kernel": {
+    "repository": "https://github.com/gregkh/linux.git",
+    "commit": "a2de78ee6ed8bf8cd99d177c74865a6e8c3cb6ea",
+    "version": "7.2.11"
+  },
+  "upstream_prototype": {
+    "repository": "https://git.pengutronix.de/git/mgr/linux",
+    "branch": "v6.3/topic/rk3568-vepu-h264-stateless-bootlin",
+    "commit": "d0897ac6844c86a8d8d6f90d4116eb068184010c",
+    "commits": [
+      "17faa1883b0680d2e17b0d56a9e52e60c09e5d13",
+      "452e1107911322bff499bf90e88a42b4d3560e6e",
+      "b645d4572a47ec15303e8ef51e2db12d62356ea4",
+      "d0897ac6844c86a8d8d6f90d4116eb068184010c"
+    ]
+  },
+  "client": {
+    "repository": "https://github.com/bootlin/v4l2-hantro-h264-encoder.git",
+    "commit": "5df9d09b5ab5decdb6b66b0f6bf8daababfa9ba2",
+    "redistribution": "No license declaration found at this pin; compile only, do not publish binary or source artifacts"
+  },
+  "patch": {
+    "path": "patches/hantro-h264-7.2.11.patch",
+    "sha256": "7504ef8139bcfb727e389ed86f82febeed5098a01fc7979eac0afd00d71bb7a2"
+  }
+}
