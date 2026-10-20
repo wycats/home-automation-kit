@@ -54,7 +54,7 @@ struct vb2_v4l2_buffer { struct vb2_buffer vb2_buf; };
 struct hantro_aux_buf { void *cpu; unsigned int size; };
 struct hantro_enc_buf { struct vb2_v4l2_buffer base; struct hantro_h264_ref h264_ref; struct hantro_aux_buf rec_buf; };
 #define hantro_get_enc_buf(b) ((struct hantro_enc_buf *)(b))
-struct vb2_queue { struct vb2_buffer *slots[2]; };
+struct vb2_queue { struct vb2_buffer *slots[2]; unsigned int max_num_buffers; };
 struct v4l2_ctrl_h264_encode_params { unsigned int flags, cabac_init_idc, slice_type; u64 reference_ts; };
 struct hantro_h264_enc_hw_ctx { struct { struct v4l2_ctrl_h264_encode_params *encode; } ctrls; struct hantro_aux_buf cabac_table[3]; };
 struct variant { int num_clocks; };
@@ -87,7 +87,6 @@ struct hantro_ctx {
     struct hantro_h264_enc_hw_ctx h264_enc;
 };
 static struct vb2_queue *v4l2_m2m_get_vq(void *m, unsigned int type) { assert(type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE); return m; }
-static unsigned int vb2_get_max_num_buffers(struct vb2_queue *q) { (void)q; assert(held); return 2; }
 static struct vb2_buffer *vb2_get_buffer(struct vb2_queue *q, unsigned int i) { assert(held && i < 2); return q->slots[i]; }
 static struct vb2_v4l2_buffer *to_vb2_v4l2_buffer(struct vb2_buffer *b) { return (void *)b; }
 
@@ -212,6 +211,7 @@ static void init_ctx(struct hantro_ctx *ctx)
     ctx->vpu_dst_fmt = &fmt; ctx->is_encoder = true; ctx->src.base.vb2_buf.req_obj.req = ctx;
     ctx->h264_refs.epoch = 1; ctx->src.base.vb2_buf.timestamp = 123;
     ctx->destination=&ctx->dst; ctx->fh.m2m_ctx=&ctx->capture;
+    ctx->capture.max_num_buffers=2;
     ctx->capture.slots[0]=&ctx->dst.base.vb2_buf; ctx->capture.slots[1]=&ctx->second.base.vb2_buf;
     ctx->src_fmt.width=ctx->src_fmt.height=64;
     ctx->dst.rec_buf.cpu=&ctx->dst; ctx->second.rec_buf.cpu=&ctx->second;

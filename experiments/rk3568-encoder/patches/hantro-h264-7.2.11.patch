@@ -1919,7 +1919,7 @@ index 02673be..e97e5b0 100644
  	.num_irqs = ARRAY_SIZE(rk3568_vepu_irqs),
 diff --git a/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
 new file mode 100644
-index 0000000..8022476
+index 0000000..4966c8d
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/rockchip_vpu_hw_h264_enc.c
 @@ -0,0 +1,548 @@
@@ -2110,7 +2110,7 @@ index 0000000..8022476
 +	 * the reconstruction held by the one active hardware job.
 +	 */
 +	spin_lock_irqsave(&ctx->dev->irqlock, flags);
-+	for (i = 0; i < vb2_get_max_num_buffers(queue); i++) {
++	for (i = 0; i < queue->max_num_buffers; i++) {
 +		struct hantro_enc_buf *enc;
 +
 +		buf = vb2_get_buffer(queue, i);

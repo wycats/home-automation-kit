@@ -29,7 +29,7 @@ static unsigned int held;
 #define spin_lock_irqsave(l, f) do { (void)(l); (f) = 0; assert(!held); held++; } while (0)
 #define spin_unlock_irqrestore(l, f) do { (void)(l); (void)(f); assert(held == 1); held--; } while (0)
 struct hantro_ctx;
-struct vb2_queue { unsigned int type; bool streaming; struct hantro_ctx *ctx; };
+struct vb2_queue { unsigned int type, max_num_buffers; bool streaming; struct hantro_ctx *ctx; };
 struct vb2_buffer { struct vb2_queue *vb2_queue; unsigned int num_planes; size_t payload; uint64_t timestamp; };
 struct vb2_v4l2_buffer { struct vb2_buffer vb2_buf; unsigned int field, sequence; };
 struct hantro_aux_buf { void *cpu; size_t size; uint64_t dma; };
@@ -67,7 +67,6 @@ static struct vb2_queue *v4l2_m2m_get_src_vq(void *m) { (void)m; return &out; }
 static struct vb2_queue *v4l2_m2m_get_dst_vq(void *m) { (void)m; return &cap; }
 static struct vb2_queue *v4l2_m2m_get_vq(void *m, unsigned int type) { (void)m; assert(type == cap.type); return &cap; }
 static bool vb2_is_streaming(struct vb2_queue *q) { return q->streaming; }
-static unsigned int vb2_get_max_num_buffers(struct vb2_queue *q) { assert(q == &cap && held); return 3; }
 static struct vb2_buffer *vb2_get_buffer(struct vb2_queue *q, unsigned int i) { assert(q == &cap && held && i < 3); return slots[i]; }
 static void vb2_set_plane_payload(struct vb2_buffer *b, unsigned int plane, size_t size) { assert(plane == 0); b->payload = size; }
 static int hantro_buf_plane_check(struct vb2_buffer *b, struct v4l2_pix_format_mplane *f) { (void)b; (void)f; return plane_error; }
@@ -102,7 +101,7 @@ int main(void) {
     struct hantro_ctx ctx = {.dev=&dev, .is_encoder=true, .vpu_dst_fmt=&fmt};
     struct v4l2_ctrl_h264_encode_params params = {.slice_type=V4L2_H264_SLICE_TYPE_P, .reference_ts=100};
     ctx.h264_enc.ctrls.encode = &params; ctx.src_fmt.width = 64; ctx.src_fmt.height = 64;
-    cap = (struct vb2_queue){.type=V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, .ctx=&ctx};
+    cap = (struct vb2_queue){.type=V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, .ctx=&ctx, .max_num_buffers=3};
     out = (struct vb2_queue){.type=V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, .ctx=&ctx};
     assert(hantro_h264_ref_advance(&ctx.h264_refs));
     for (unsigned int i=0; i<3; i++) {
