@@ -3,7 +3,13 @@
 The maintained Rust client's device-free foundation and verification commands
 are in [CLIENT.md](CLIENT.md). Hardware execution remains disabled.
 
-The latest contained follow-on qualifies H.264 status with the VEPU2 raw IRQ bit
+The kernel now also [rejects external H.264 jobs before hardware preparation](ADMISSION-BOUNDARY.md).
+The missing userspace backend alone was not a kernel safety boundary. There is
+no runtime bypass: an isolated image containing this candidate cannot exercise
+H.264 until a reviewed DMA recovery contract replaces that admission gate.
+Internal preparatory/job functions remain compiled and tested offline.
+
+The previous contained follow-on qualifies H.264 status with the VEPU2 raw IRQ bit
 before acknowledging or claiming a job. Its 98 extracted-handler cases and the
 separate [DMA/reset boundary audit](DMA-RESET-BOUNDARY.md) keep that software
 correction distinct from hardware quiescence. No reset sequence is added.
