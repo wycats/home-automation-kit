@@ -66,7 +66,7 @@ jobs:
         run: bash experiments/rk3568-kernel/package.sh "$RUNNER_TEMP/linux" "$RUNNER_TEMP/kernel-build" "$RUNNER_TEMP/build-report"
       - name: Retain explicit compile outputs only
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: rk3568-compile-only
           retention-days: 7
@@ -90,7 +90,7 @@ jobs:
         run: bash experiments/rk3568-diagnostic/build_userspace.sh "$RUNNER_TEMP/userspace" "$RUNNER_TEMP/userspace-report"
       - name: Retain userspace results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: rk3568-userspace
           retention-days: 7
@@ -115,7 +115,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y kmod cpio xz-utils
       - name: Assemble RAM-root payload and inspect closure
         run: bash experiments/rk3568-diagnostic/assemble.sh "$RUNNER_TEMP/kernel-artifacts/build-report/kernel-payload.tar.xz" "$RUNNER_TEMP/userspace-report" "$RUNNER_TEMP/assembly"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: rk3568-diagnostic-payload
           retention-days: 7
